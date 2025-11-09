@@ -12,21 +12,21 @@ import (
 )
 
 type (
-	// HandlerFunc はJSON-RPCリクエストを処理する関数。
+	// HandlerFunc processes JSON-RPC requests.
 	HandlerFunc func(ctx context.Context, params json.RawMessage) (any, *Error)
 
-	// NotificationFunc はJSON-RPC通知を処理する関数。
+	// NotificationFunc processes JSON-RPC notifications.
 	NotificationFunc func(ctx context.Context, params json.RawMessage)
 )
 
-// Error はJSON-RPCエラー表現。
+// Error represents a JSON-RPC error payload.
 type Error struct {
 	Code    int         `json:"code"`
 	Message string      `json:"message"`
 	Data    interface{} `json:"data,omitempty"`
 }
 
-// Request はJSON-RPCリクエスト。
+// Request models a JSON-RPC request.
 type Request struct {
 	JSONRPC string          `json:"jsonrpc"`
 	Method  string          `json:"method"`
@@ -34,7 +34,7 @@ type Request struct {
 	ID      *json.RawMessage `json:"id,omitempty"`
 }
 
-// Response はJSON-RPCレスポンス。
+// Response models a JSON-RPC response.
 type Response struct {
 	JSONRPC string       `json:"jsonrpc"`
 	Result  interface{}  `json:"result,omitempty"`
@@ -42,7 +42,7 @@ type Response struct {
 	ID      *json.RawMessage `json:"id,omitempty"`
 }
 
-// Server はJSON-RPCサーバー。
+// Server is a simple JSON-RPC server.
 type Server struct {
 	logger        zerolog.Logger
 	handlers      map[string]HandlerFunc
@@ -50,7 +50,7 @@ type Server struct {
 	inflight      sync.Map
 }
 
-// NewServer はサーバーを初期化する。
+// NewServer constructs a server instance.
 func NewServer(logger zerolog.Logger) *Server {
 	return &Server{
 		logger:        logger,
@@ -59,17 +59,17 @@ func NewServer(logger zerolog.Logger) *Server {
 	}
 }
 
-// Register はリクエストハンドラーを登録する。
+// Register registers an RPC handler.
 func (s *Server) Register(method string, handler HandlerFunc) {
 	s.handlers[method] = handler
 }
 
-// RegisterNotification は通知ハンドラーを登録する。
+// RegisterNotification registers a notification handler.
 func (s *Server) RegisterNotification(method string, handler NotificationFunc) {
 	s.notifications[method] = handler
 }
 
-// Cancel は進行中のリクエストをキャンセルする。
+// Cancel cancels an in-flight request, if present.
 func (s *Server) Cancel(requestID string) bool {
 	if value, ok := s.inflight.Load(requestID); ok {
 		if cancel, ok := value.(context.CancelFunc); ok {
@@ -81,7 +81,7 @@ func (s *Server) Cancel(requestID string) bool {
 	return false
 }
 
-// Serve はリクエストを受け付ける。
+// Serve starts processing incoming JSON-RPC messages.
 func (s *Server) Serve(reader io.Reader, writer io.Writer) error {
 	decoder := json.NewDecoder(reader)
 	encoder := json.NewEncoder(writer)
@@ -92,7 +92,7 @@ func (s *Server) Serve(reader io.Reader, writer io.Writer) error {
 			if errors.Is(err, io.EOF) {
 				return nil
 			}
-			s.logger.Error().Err(err).Msg("JSONデコード失敗")
+			s.logger.Error().Err(err).Msg("failed to decode JSON")
 			return err
 		}
 
@@ -100,7 +100,7 @@ func (s *Server) Serve(reader io.Reader, writer io.Writer) error {
 			if handler, ok := s.notifications[req.Method]; ok {
 				go handler(context.Background(), req.Params)
 			} else {
-				s.logger.Warn().Str("method", req.Method).Msg("未登録の通知")
+				s.logger.Warn().Str("method", req.Method).Msg("notification handler not found")
 			}
 			continue
 		}
@@ -112,11 +112,11 @@ func (s *Server) Serve(reader io.Reader, writer io.Writer) error {
 				ID:      req.ID,
 				Error: &Error{
 					Code:    -32601,
-					Message: "未定義のメソッドです",
+					Message: "method not found",
 				},
 			}
 			if err := encoder.Encode(resp); err != nil {
-				s.logger.Error().Err(err).Msg("レスポンス送信失敗")
+				s.logger.Error().Err(err).Msg("failed to encode response")
 			}
 			continue
 		}
@@ -147,7 +147,7 @@ func (s *Server) Serve(reader io.Reader, writer io.Writer) error {
 		}
 
 		if err := encoder.Encode(resp); err != nil {
-			s.logger.Error().Err(err).Msg("レスポンス送信失敗")
+			s.logger.Error().Err(err).Msg("failed to encode response")
 		}
 	}
 }

@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	useStdio := flag.Bool("stdio", true, "JSON-RPCを標準入出力で提供します")
+	useStdio := flag.Bool("stdio", true, "Serve JSON-RPC over stdio")
 	flag.Parse()
 
 	logger := logging.Configure()
@@ -20,11 +20,11 @@ func main() {
 
 	if *useStdio {
 		if err := server.Serve(os.Stdin, os.Stdout); err != nil {
-			logger.Fatal().Err(err).Msg("サーバー停止")
+			logger.Fatal().Err(err).Msg("server stopped with error")
 		}
 		return
 	}
 
-	logger.Fatal().Msg("現在は --stdio モードのみサポートしています")
+	logger.Fatal().Msg("only --stdio mode is currently supported")
 }
 

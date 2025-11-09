@@ -12,7 +12,7 @@ var (
 	initLogger sync.Once
 )
 
-// Configure はzerologのグローバル設定を初期化し、ロガーを返す。
+// Configure wires zerolog defaults and returns the logger.
 func Configure() zerolog.Logger {
 	initLogger.Do(func() {
 		zerolog.TimeFieldFormat = zerolog.TimeFormatUnixMs
@@ -26,7 +26,7 @@ func Configure() zerolog.Logger {
 	return logger
 }
 
-// Logger は初期化済みのロガーを返す。
+// Logger returns an initialized logger instance.
 func Logger() zerolog.Logger {
 	if logger.GetLevel() == zerolog.NoLevel {
 		return Configure()

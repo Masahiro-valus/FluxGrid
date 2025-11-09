@@ -35,7 +35,7 @@ export class ResultsPanel implements vscode.Disposable {
 
     this.panel.webview.onDidReceiveMessage((message) => {
       if (message?.type === "ready") {
-        this.setStatus("Core Engine 初期化中…");
+        this.setStatus("Initializing Core Engine...");
       }
     });
   }

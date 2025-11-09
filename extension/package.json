@@ -1,7 +1,7 @@
 {
   "name": "fluxgrid-extension",
   "displayName": "FluxGrid DB Client",
-  "description": "Cursor/VS Code互換のDBクライアント拡張。Core Engineと連携して高速なクエリ実行を実現します。",
+  "description": "Cursor/VS Code-compatible database client extension powered by the FluxGrid Core Engine.",
   "version": "0.0.1",
   "publisher": "fluxgrid",
   "license": "MIT",
@@ -19,15 +19,15 @@
     "commands": [
       {
         "command": "fluxgrid.openPanel",
-        "title": "FluxGrid: 接続パネルを開く"
+        "title": "FluxGrid: Open Result Panel"
       },
       {
         "command": "fluxgrid.executeQuery",
-        "title": "FluxGrid: クエリを実行"
+        "title": "FluxGrid: Execute Query"
       },
       {
         "command": "fluxgrid.cancelQuery",
-        "title": "FluxGrid: 実行中のクエリをキャンセル"
+        "title": "FluxGrid: Cancel Running Query"
       }
     ]
   },

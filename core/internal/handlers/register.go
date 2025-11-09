@@ -15,7 +15,7 @@ const (
 	version = "0.0.1"
 )
 
-// Register は全ハンドラーをサーバーへ登録する。
+// Register attaches all handlers to the RPC server.
 func Register(server *rpc.Server) {
 	server.Register("core.ping", pingHandler)
 	server.Register("query.execute", executeHandler)
@@ -59,7 +59,7 @@ func executeHandler(ctx context.Context, params json.RawMessage) (any, *rpc.Erro
 		if err := json.Unmarshal(params, &payload); err != nil {
 			return nil, &rpc.Error{
 				Code:    -32602,
-				Message: "不正なパラメータ形式です",
+				Message: "invalid parameters",
 				Data:    err.Error(),
 			}
 		}
@@ -68,21 +68,21 @@ func executeHandler(ctx context.Context, params json.RawMessage) (any, *rpc.Erro
 	if payload.SQL == "" {
 		return nil, &rpc.Error{
 			Code:    -32602,
-			Message: "実行するSQLが必要です",
+			Message: "SQL is required",
 		}
 	}
 
 	if payload.Connection.Driver == "" {
 		return nil, &rpc.Error{
 			Code:    -32602,
-			Message: "接続ドライバーが未指定です",
+			Message: "driver is required",
 		}
 	}
 
 	if payload.Connection.DSN == "" {
 		return nil, &rpc.Error{
 			Code:    -32602,
-			Message: "接続文字列(DSN)が未指定です",
+			Message: "DSN is required",
 		}
 	}
 
@@ -98,7 +98,7 @@ func executeHandler(ctx context.Context, params json.RawMessage) (any, *rpc.Erro
 	default:
 		return nil, &rpc.Error{
 			Code:    -32601,
-			Message: fmt.Sprintf("未対応のドライバーです: %s", payload.Connection.Driver),
+			Message: fmt.Sprintf("driver not supported: %s", payload.Connection.Driver),
 		}
 	}
 
@@ -112,7 +112,7 @@ func executeHandler(ctx context.Context, params json.RawMessage) (any, *rpc.Erro
 	if err != nil {
 		return nil, &rpc.Error{
 			Code:    -32010,
-			Message: "データベース接続に失敗しました",
+			Message: "failed to connect to database",
 			Data:    err.Error(),
 		}
 	}
@@ -122,7 +122,7 @@ func executeHandler(ctx context.Context, params json.RawMessage) (any, *rpc.Erro
 	if err != nil {
 		return nil, &rpc.Error{
 			Code:    -32011,
-			Message: "クエリ実行に失敗しました",
+			Message: "query execution failed",
 			Data:    err.Error(),
 		}
 	}
@@ -150,7 +150,7 @@ func executeHandler(ctx context.Context, params json.RawMessage) (any, *rpc.Erro
 		if err != nil {
 			return nil, &rpc.Error{
 				Code:    -32012,
-				Message: "結果の読み取りに失敗しました",
+				Message: "failed to read result row",
 				Data:    err.Error(),
 			}
 		}
@@ -167,7 +167,7 @@ func executeHandler(ctx context.Context, params json.RawMessage) (any, *rpc.Erro
 	if err := rows.Err(); err != nil {
 		return nil, &rpc.Error{
 			Code:    -32012,
-			Message: "結果の読み取り中にエラーが発生しました",
+			Message: "error occurred while reading rows",
 			Data:    err.Error(),
 		}
 	}
@@ -178,7 +178,7 @@ func executeHandler(ctx context.Context, params json.RawMessage) (any, *rpc.Erro
 		Str("driver", payload.Connection.Driver).
 		Int("row_count", rowCount).
 		Float64("duration_ms", duration).
-		Msg("query.execute 完了")
+		Msg("query.execute completed")
 
 	return executeResult{
 		Columns:         columns,
@@ -195,7 +195,7 @@ func cancelHandler(server *rpc.Server) rpc.NotificationFunc {
 
 		var payload cancelPayload
 		if err := json.Unmarshal(params, &payload); err != nil {
-			logging.Logger().Warn().Err(err).Msg("query.cancel: パラメータ解析に失敗")
+			logging.Logger().Warn().Err(err).Msg("query.cancel: failed to parse parameters")
 			return
 		}
 
@@ -212,7 +212,7 @@ func cancelHandler(server *rpc.Server) rpc.NotificationFunc {
 
 		requestID := fmt.Sprint(anyID)
 		if !server.Cancel(requestID) {
-			logging.Logger().Warn().Str("request_id", requestID).Msg("query.cancel: 該当リクエストなし")
+			logging.Logger().Warn().Str("request_id", requestID).Msg("query.cancel: request not found")
 		}
 	}
 }

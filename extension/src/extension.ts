@@ -14,23 +14,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     await coreClient.sendRequest("core.ping", { timestamp: Date.now() });
     coreReady = true;
   } catch (error) {
-    vscode.window.showErrorMessage(`Core Engine の起動に失敗しました: ${String(error)}`);
+    vscode.window.showErrorMessage(`Failed to start Core Engine: ${String(error)}`);
   }
 
   const openPanel = vscode.commands.registerCommand("fluxgrid.openPanel", () => {
     panel = ResultsPanel.createOrShow(context);
-    panel.setStatus(coreReady ? "接続待機中" : "Core Engine 初期化中…");
+    panel.setStatus(coreReady ? "Ready for queries" : "Initializing Core Engine...");
   });
 
   const executeQuery = vscode.commands.registerCommand("fluxgrid.executeQuery", async () => {
     if (!coreClient) {
-      vscode.window.showErrorMessage("Core Engine が初期化できませんでした。");
+      vscode.window.showErrorMessage("Core Engine is not available.");
       return;
     }
 
     const editor = vscode.window.activeTextEditor;
     if (!editor) {
-      vscode.window.showInformationMessage("SQLを含むエディタを開いてください。");
+      vscode.window.showInformationMessage("Open an editor containing SQL to execute.");
       return;
     }
 
@@ -40,7 +40,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       : editor.document.getText(selection);
 
     if (!sql.trim()) {
-      vscode.window.showWarningMessage("実行するSQLが空です。");
+      vscode.window.showWarningMessage("No SQL selected to execute.");
       return;
     }
 
@@ -62,7 +62,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
 
     const cancellation = new vscode.CancellationTokenSource();
-    vscode.window.setStatusBarMessage("FluxGrid: クエリ実行中… (Escでキャンセル)", 5000);
+    vscode.window.setStatusBarMessage("FluxGrid: Running query… (Press Esc to cancel)", 5000);
 
     const disposable = vscode.commands.registerCommand("fluxgrid.cancelQuery", () => {
       cancellation.cancel();
@@ -76,14 +76,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }>("query.execute", request, cancellation.token);
 
       const rowCount = result.rows?.length ?? 0;
-      const message = `クエリ成功 (${rowCount} 行, ${result.executionTimeMs.toFixed(1)} ms)`;
+      const message = `Query succeeded (${rowCount} rows, ${result.executionTimeMs.toFixed(1)} ms)`;
       vscode.window.setStatusBarMessage(`FluxGrid: ${message}`, 5000);
       vscode.window.showInformationMessage(message);
 
       panel = ResultsPanel.createOrShow(context);
-      panel.setStatus("最新の結果を受信しました。");
+      panel.setStatus("Received latest results.");
     } catch (error) {
-      vscode.window.showErrorMessage(`クエリ実行に失敗しました: ${String(error)}`);
+      vscode.window.showErrorMessage(`Query failed: ${String(error)}`);
     } finally {
       cancellation.dispose();
       disposable.dispose();

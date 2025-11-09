@@ -55,7 +55,7 @@ export class CoreClient implements vscode.Disposable {
       }
 
       if (!this.process || !this.process.stdout || !this.process.stdin) {
-        reject(new Error("Core Engine の起動に失敗しました。"));
+        reject(new Error("Failed to launch Core Engine."));
         return;
       }
 
@@ -77,8 +77,8 @@ export class CoreClient implements vscode.Disposable {
 
       this.process.on("exit", (code, signal) => {
         this.dispose();
-        const reason = code !== null ? `コード ${code}` : `シグナル ${signal}`;
-        vscode.window.showWarningMessage(`Core Engine が終了しました (${reason})`);
+        const reason = code !== null ? `code ${code}` : `signal ${signal}`;
+        vscode.window.showWarningMessage(`Core Engine exited (${reason})`);
       });
 
       resolve();
@@ -91,7 +91,7 @@ export class CoreClient implements vscode.Disposable {
     token?: vscode.CancellationToken
   ): Promise<T> {
     if (!this.process || !this.process.stdin) {
-      throw new Error("Core Engine が起動していません。");
+      throw new Error("Core Engine is not running.");
     }
 
     const id = this.nextRequestId++;
@@ -117,13 +117,13 @@ export class CoreClient implements vscode.Disposable {
       });
     }
 
-    this.process.stdin.write(`${serialized}\n`, "utf8");
+      this.process.stdin.write(`${serialized}\n`, "utf8");
     return result;
   }
 
   async sendNotification(method: string, params?: unknown): Promise<void> {
     if (!this.process || !this.process.stdin) {
-      throw new Error("Core Engine が起動していません。");
+      throw new Error("Core Engine is not running.");
     }
 
     const payload: JsonRpcRequest = {
@@ -137,7 +137,7 @@ export class CoreClient implements vscode.Disposable {
 
   dispose(): void {
     for (const [, handlers] of this.pending) {
-      handlers.reject(new Error("Core Engine が停止しました。"));
+      handlers.reject(new Error("Core Engine has stopped."));
     }
     this.pending.clear();
 
@@ -183,10 +183,10 @@ export class CoreClient implements vscode.Disposable {
 
         pending.resolve(message.result);
       } else {
-        console.log("通知を受信:", message);
+        console.log("Received notification:", message);
       }
     } catch (error) {
-      console.error("JSON-RPCメッセージ解析に失敗しました", error);
+      console.error("Failed to parse JSON-RPC message", error);
     }
   }
 

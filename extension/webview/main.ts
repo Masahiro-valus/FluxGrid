@@ -9,11 +9,11 @@ if (root) {
     <main data-testid="fluxgrid-root">
       <section class="header">
         <h1>FluxGrid</h1>
-        <p>最初の接続を作成し、SQLを実行してみましょう。</p>
+        <p>Create your first connection and run a query.</p>
       </section>
       <section class="status">
         <label>Core Engine</label>
-        <span id="core-status">初期化中...</span>
+        <span id="core-status">Initializing...</span>
       </section>
     </main>
   `;
