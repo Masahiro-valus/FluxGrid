@@ -4,17 +4,20 @@ import { ResultsPanel } from "./webviewPanel";
 import { disposeConnectionStore, getConnectionStore } from "./storage";
 import { ConnectionService } from "./services/connectionService";
 import { registerConnectionCommands } from "./commands/connectionCommands";
+import { QueryService } from "./services/queryService";
 
 let coreClient: CoreClient | undefined;
 let coreReady = false;
 let panel: ResultsPanel | undefined;
 let connectionService: ConnectionService | undefined;
+let queryService: QueryService | undefined;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const connectionStore = getConnectionStore(context);
   connectionService = new ConnectionService(connectionStore);
   registerConnectionCommands(context, connectionService);
   coreClient = new CoreClient(context);
+  queryService = new QueryService(coreClient, context);
 
   try {
     await coreClient.start();
@@ -34,8 +37,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
 
   const executeQuery = vscode.commands.registerCommand("fluxgrid.executeQuery", async () => {
-    if (!coreClient) {
-      vscode.window.showErrorMessage("Core Engine is not available.");
+    if (!queryService) {
+      vscode.window.showErrorMessage("Query service is not available.");
       return;
     }
 
@@ -74,17 +77,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     const cancellation = new vscode.CancellationTokenSource();
     vscode.window.setStatusBarMessage("FluxGrid: Running query… (Press Esc to cancel)", 5000);
-
     const disposable = vscode.commands.registerCommand("fluxgrid.cancelQuery", () => {
       cancellation.cancel();
     });
 
     try {
-      const result = await coreClient.sendRequest<{
-        columns: { name: string; dataType: string }[];
-        rows: unknown[][];
-        executionTimeMs: number;
-      }>("query.execute", request, cancellation.token);
+      const result = await queryService.execute(request, cancellation);
 
       const rowCount = result.rows?.length ?? 0;
       const message = `Query succeeded (${rowCount} rows, ${result.executionTimeMs.toFixed(1)} ms)`;
@@ -110,6 +108,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       coreClient?.dispose();
       disposeConnectionStore();
       connectionService = undefined;
+      queryService?.dispose();
+      queryService = undefined;
     }
   });
 }
@@ -118,5 +118,7 @@ export function deactivate(): void {
   coreClient?.dispose();
   disposeConnectionStore();
   connectionService = undefined;
+  queryService?.dispose();
+  queryService = undefined;
 }
 
