@@ -1,0 +1,16 @@
+# Node
+extension/node_modules/
+extension/dist/
+extension/npm-debug.log
+
+# Go build artifacts
+core/bin/
+core/dist/
+
+# General
+.DS_Store
+*.log
+
+# Vite
+extension/dist-webview/
+
