@@ -2,13 +2,18 @@ import * as vscode from "vscode";
 import { CoreClient } from "./coreClient";
 import { ResultsPanel } from "./webviewPanel";
 import { disposeConnectionStore, getConnectionStore } from "./storage";
+import { ConnectionService } from "./services/connectionService";
+import { registerConnectionCommands } from "./commands/connectionCommands";
 
 let coreClient: CoreClient | undefined;
 let coreReady = false;
 let panel: ResultsPanel | undefined;
+let connectionService: ConnectionService | undefined;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
-  getConnectionStore(context);
+  const connectionStore = getConnectionStore(context);
+  connectionService = new ConnectionService(connectionStore);
+  registerConnectionCommands(context, connectionService);
   coreClient = new CoreClient(context);
 
   try {
@@ -103,5 +108,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 export function deactivate(): void {
   coreClient?.dispose();
   disposeConnectionStore();
+  connectionService = undefined;
 }
 
