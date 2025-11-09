@@ -205,4 +205,3 @@ export class CoreClient implements vscode.Disposable {
     return bundled;
   }
 }
-

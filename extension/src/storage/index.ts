@@ -17,4 +17,3 @@ export function getConnectionStore(context: vscode.ExtensionContext): Connection
 export function disposeConnectionStore(): void {
   instance = undefined;
 }
-

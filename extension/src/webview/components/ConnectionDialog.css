@@ -1,0 +1,80 @@
+.fg-connection-dialog {
+  border: 1px solid var(--fg-border-color);
+  border-radius: var(--fg-border-radius);
+  padding: 0;
+  background: var(--fg-background-contrast);
+  color: var(--vscode-editor-foreground);
+  min-width: 360px;
+  box-shadow: var(--fg-shadow-elevation);
+}
+
+.fg-connection-dialog__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fg-spacing-sm);
+  padding: var(--fg-spacing-md);
+}
+
+.fg-connection-dialog__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--fg-spacing-xs);
+}
+
+.fg-connection-dialog__header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: var(--vscode-font-weight-bold, 600);
+}
+
+.fg-connection-dialog__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fg-spacing-sm);
+}
+
+.fg-field {
+  width: 100%;
+}
+
+.fg-field-grid {
+  display: grid;
+  grid-template-columns: 1fr minmax(96px, 120px);
+  gap: var(--fg-spacing-sm);
+}
+
+.fg-checkbox-row {
+  display: flex;
+  gap: var(--fg-spacing-sm);
+  align-items: center;
+}
+
+.fg-connection-dialog__test-message {
+  font-size: 0.85rem;
+  margin: 0;
+  padding: var(--fg-spacing-xs);
+  border-radius: var(--fg-border-radius);
+}
+
+.fg-connection-dialog__test-message--info {
+  background: var(--vscode-editorWidget-background);
+  color: var(--fg-foreground-muted);
+}
+
+.fg-connection-dialog__test-message--success {
+  background: var(--vscode-terminal-ansiGreen-background, var(--vscode-editorWidget-background));
+  color: var(--vscode-terminal-ansiGreen-foreground, var(--vscode-editor-foreground));
+}
+
+.fg-connection-dialog__test-message--error {
+  background: var(--vscode-inputValidation-errorBackground);
+  color: var(--vscode-inputValidation-errorForeground);
+}
+
+.fg-connection-dialog__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--fg-spacing-sm);
+}
+

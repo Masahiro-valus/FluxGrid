@@ -38,4 +38,3 @@ export function registerConnectionCommands(
 
   context.subscriptions.push(...disposables);
 }
-

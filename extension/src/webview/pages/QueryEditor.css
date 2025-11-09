@@ -1,0 +1,208 @@
+.fg-app {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  width: 100%;
+  min-height: 100vh;
+  background: var(--vscode-editor-background);
+  color: var(--vscode-editor-foreground);
+}
+
+.fg-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--fg-spacing-sm);
+  padding: var(--fg-spacing-sm) var(--fg-spacing-md);
+  background: var(--vscode-editorWidget-background);
+  border-bottom: 1px solid var(--fg-border-color);
+}
+
+.fg-toolbar__group {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fg-spacing-xs);
+}
+
+.fg-toolbar__spacer {
+  flex: 1;
+}
+
+.fg-status {
+  font-size: 0.85rem;
+  color: var(--fg-foreground-muted);
+}
+
+.fg-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr) minmax(240px, 320px);
+  gap: var(--fg-spacing-md);
+  padding: var(--fg-spacing-md);
+  min-height: 0;
+}
+
+.fg-pane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fg-spacing-sm);
+  background: var(--fg-background-contrast);
+  border: 1px solid var(--fg-border-color);
+  border-radius: var(--fg-border-radius);
+  padding: var(--fg-spacing-md);
+  min-height: 0;
+}
+
+.fg-pane__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.fg-pane__title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: var(--vscode-font-weight-bold, 600);
+}
+
+.fg-schema-tree {
+  flex: 1;
+  overflow: auto;
+}
+
+.fg-editor-pane {
+  display: grid;
+  grid-template-rows: minmax(160px, 0.4fr) minmax(220px, 0.6fr);
+  gap: var(--fg-spacing-sm);
+  min-height: 0;
+}
+
+.fg-sql-editor {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--fg-border-radius);
+  border: 1px solid var(--fg-border-color);
+  background: var(--vscode-editor-background);
+}
+
+.fg-sql-editor vscode-text-area {
+  flex: 1;
+  min-height: 0;
+}
+
+.fg-sql-shortcuts {
+  padding: var(--fg-spacing-xs) var(--fg-spacing-sm);
+  border-top: 1px solid var(--fg-border-color);
+  font-size: 0.8rem;
+  color: var(--fg-foreground-muted);
+}
+
+.fg-results {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--fg-border-radius);
+  border: 1px solid var(--fg-border-color);
+  background: var(--vscode-editor-background);
+}
+
+.fg-results__grid {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+.fg-results__empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--fg-spacing-sm);
+  color: var(--fg-foreground-muted);
+}
+
+.fg-results__overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--vscode-editor-background) 80%, transparent);
+  backdrop-filter: blur(2px);
+  z-index: 3;
+}
+
+.fg-log-list {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--fg-spacing-xs);
+  padding-right: var(--fg-spacing-xs);
+}
+
+.fg-log-entry {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--fg-spacing-xs);
+  padding: var(--fg-spacing-xs);
+  border-radius: var(--fg-border-radius);
+  background: var(--fg-background-soft);
+  font-size: 0.8rem;
+}
+
+.fg-log-entry[data-level="error"] {
+  border-left: 3px solid var(--vscode-inputValidation-errorBorder);
+}
+
+.fg-log-entry[data-level="warn"] {
+  border-left: 3px solid var(--vscode-inputValidation-warningBorder);
+}
+
+.fg-log-entry[data-level="info"] {
+  border-left: 3px solid var(--vscode-inputValidation-infoBorder, var(--fg-border-color));
+}
+
+.fg-log-entry__timestamp {
+  color: var(--fg-foreground-muted);
+}
+
+.fg-schema-search {
+  margin-bottom: var(--fg-spacing-xs);
+}
+
+.fg-row-count {
+  font-size: 0.8rem;
+  color: var(--fg-foreground-muted);
+}
+
+.fg-error-banner {
+  margin: var(--fg-spacing-sm);
+  padding: var(--fg-spacing-xs) var(--fg-spacing-sm);
+  border-radius: var(--fg-border-radius);
+  background: var(--vscode-inputValidation-errorBackground);
+  color: var(--vscode-inputValidation-errorForeground);
+}
+
+@media (max-width: 1200px) {
+  .fg-layout {
+    grid-template-columns: minmax(200px, 240px) minmax(0, 1fr);
+  }
+
+  .fg-pane:nth-child(3) {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 960px) {
+  .fg-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .fg-pane {
+    min-height: 240px;
+  }
+}
+

@@ -70,7 +70,10 @@ export class ConnectionStore {
     return state.connections;
   }
 
-  async get(id: string, opts?: { includeSecrets?: boolean }): Promise<HydratedConnection | undefined> {
+  async get(
+    id: string,
+    opts?: { includeSecrets?: boolean }
+  ): Promise<HydratedConnection | undefined> {
     const found = this.loadState().connections.find((conn) => conn.id === id);
     if (!found) {
       return undefined;
@@ -173,4 +176,3 @@ export class ConnectionStore {
     await this.options.secretStorage.store(secretId, value);
   }
 }
-

@@ -29,11 +29,7 @@ export class QueryService implements vscode.Disposable {
   private readonly listeners = new Set<QueryEventListener>();
   private readonly disposables: vscode.Disposable[] = [];
 
-  constructor(
-    private readonly coreClient: CoreClient,
-    private readonly context: vscode.ExtensionContext,
-    private readonly cancellationFactory: () => vscode.Disposable = () => ({ dispose: () => undefined })
-  ) {}
+  constructor(private readonly coreClient: CoreClient) {}
 
   onDidChange(listener: QueryEventListener): vscode.Disposable {
     this.listeners.add(listener);
@@ -98,4 +94,3 @@ export class QueryService implements vscode.Disposable {
     }
   }
 }
-

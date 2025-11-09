@@ -11,10 +11,7 @@ export interface Disposable {
   dispose(): void;
 }
 
-type StoreLike = Pick<
-  ConnectionStore,
-  "list" | "save" | "delete" | "get"
->;
+type StoreLike = Pick<ConnectionStore, "list" | "save" | "delete" | "get">;
 
 export class ConnectionService {
   private readonly listeners = new Set<ConnectionsChangeListener>();
@@ -82,4 +79,3 @@ export class ConnectionService {
     }
   }
 }
-

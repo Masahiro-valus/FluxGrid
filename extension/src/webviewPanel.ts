@@ -1,6 +1,10 @@
 import * as vscode from "vscode";
 import { ConnectionService } from "./services/connectionService";
+import { QueryService } from "./services/queryService";
+import { CoreClient } from "./coreClient";
 import { createConnectionMessageRouter } from "./webview/connectionMessageRouter";
+import { createQueryMessageRouter } from "./webview/queryMessageRouter";
+import { randomBytes } from "crypto";
 
 export class ResultsPanel implements vscode.Disposable {
   private static current: ResultsPanel | undefined;
@@ -8,7 +12,9 @@ export class ResultsPanel implements vscode.Disposable {
 
   static createOrShow(
     context: vscode.ExtensionContext,
-    service: ConnectionService
+    connectionService: ConnectionService,
+    queryService: QueryService,
+    coreClient: CoreClient
   ): ResultsPanel {
     if (ResultsPanel.current) {
       ResultsPanel.current.panel.reveal(vscode.ViewColumn.Beside);
@@ -25,14 +31,22 @@ export class ResultsPanel implements vscode.Disposable {
       }
     );
 
-    ResultsPanel.current = new ResultsPanel(panel, context, service);
+    ResultsPanel.current = new ResultsPanel(
+      panel,
+      context,
+      connectionService,
+      queryService,
+      coreClient
+    );
     return ResultsPanel.current;
   }
 
   private constructor(
     private readonly panel: vscode.WebviewPanel,
     private readonly context: vscode.ExtensionContext,
-    private readonly connectionService: ConnectionService
+    private readonly connectionService: ConnectionService,
+    private readonly queryService: QueryService,
+    private readonly coreClient: CoreClient
   ) {
     this.panel.webview.html = this.getHtml();
 
@@ -40,7 +54,18 @@ export class ResultsPanel implements vscode.Disposable {
       this.dispose();
     });
 
-    createConnectionMessageRouter(this.panel.webview, this.connectionService, this.disposables);
+    createConnectionMessageRouter(
+      this.panel.webview,
+      this.connectionService,
+      this.coreClient,
+      this.disposables
+    );
+    createQueryMessageRouter(
+      this.panel.webview,
+      this.queryService,
+      this.connectionService,
+      this.disposables
+    );
   }
 
   setStatus(message: string): void {
@@ -60,26 +85,27 @@ export class ResultsPanel implements vscode.Disposable {
   }
 
   private getHtml(): string {
+    const nonce = randomBytes(16).toString("base64");
     const scriptUri = this.panel.webview.asWebviewUri(
       vscode.Uri.joinPath(this.context.extensionUri, "dist", "webview", "assets", "main.js")
     );
     const styleUri = this.panel.webview.asWebviewUri(
-      vscode.Uri.joinPath(this.context.extensionUri, "dist", "webview", "assets", "style.css")
+      vscode.Uri.joinPath(this.context.extensionUri, "dist", "webview", "assets", "main.css")
     );
     const cspSource = this.panel.webview.cspSource;
 
     return `<!DOCTYPE html>
-<html lang="ja">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource} https:; style-src ${cspSource} 'unsafe-inline'; script-src ${cspSource};">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource} https:; style-src ${cspSource}; script-src 'nonce-${nonce}';">
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="stylesheet" href="${styleUri}">
     <title>FluxGrid</title>
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="${scriptUri}"></script>
+    <script type="module" nonce="${nonce}" src="${scriptUri}"></script>
   </body>
 </html>`;
   }

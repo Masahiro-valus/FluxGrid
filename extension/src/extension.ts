@@ -17,7 +17,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   connectionService = new ConnectionService(connectionStore);
   registerConnectionCommands(context, connectionService);
   coreClient = new CoreClient(context);
-  queryService = new QueryService(coreClient, context);
+  queryService = new QueryService(coreClient);
 
   try {
     await coreClient.start();
@@ -32,7 +32,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       vscode.window.showErrorMessage("Connection service is not available.");
       return;
     }
-    panel = ResultsPanel.createOrShow(context, connectionService);
+    if (!queryService || !coreClient) {
+      vscode.window.showErrorMessage("Query infrastructure is not available.");
+      return;
+    }
+    panel = ResultsPanel.createOrShow(context, connectionService, queryService, coreClient);
     panel.setStatus(coreReady ? "Ready for queries" : "Initializing Core Engine...");
   });
 
@@ -49,9 +53,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
 
     const selection = editor.selection;
-    const sql = selection.isEmpty
-      ? editor.document.getText()
-      : editor.document.getText(selection);
+    const sql = selection.isEmpty ? editor.document.getText() : editor.document.getText(selection);
 
     if (!sql.trim()) {
       vscode.window.showWarningMessage("No SQL selected to execute.");
@@ -93,7 +95,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.window.showErrorMessage("Connection service is not available.");
         return;
       }
-      panel = ResultsPanel.createOrShow(context, connectionService);
+      if (!queryService || !coreClient) {
+        vscode.window.showErrorMessage("Query infrastructure is not available.");
+        return;
+      }
+      panel = ResultsPanel.createOrShow(context, connectionService, queryService, coreClient);
       panel.setStatus("Received latest results.");
     } catch (error) {
       vscode.window.showErrorMessage(`Query failed: ${String(error)}`);
@@ -121,4 +127,3 @@ export function deactivate(): void {
   queryService?.dispose();
   queryService = undefined;
 }
-

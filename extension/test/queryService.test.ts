@@ -1,8 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { CancellationTokenSource, Disposable } from "vscode";
+import type { CancellationTokenSource } from "vscode";
 import { QueryService } from "../src/services/queryService";
-
-const noopDispose = () => ({ dispose: vi.fn() });
 
 describe("QueryService", () => {
   const createCoreClient = () => ({
@@ -11,18 +9,12 @@ describe("QueryService", () => {
     dispose: vi.fn()
   });
 
-  const createContext = () => ({
-    subscriptions: [] as Disposable[]
-  });
-
   let service: QueryService;
   let coreClient: ReturnType<typeof createCoreClient>;
-  let context: ReturnType<typeof createContext>;
 
   beforeEach(() => {
-    context = createContext();
     coreClient = createCoreClient();
-    service = new QueryService(coreClient as any, context as any);
+    service = new QueryService(coreClient as any);
   });
 
   it("executes query using core client", async () => {
@@ -115,7 +107,7 @@ describe("QueryService", () => {
   it("disposes listeners when service disposed", () => {
     const subscription = service.onDidChange(() => undefined);
     service.dispose();
-    expect(subscription.dispose).not.toThrow;
+    expect(() => subscription.dispose()).not.toThrow();
   });
 });
 
