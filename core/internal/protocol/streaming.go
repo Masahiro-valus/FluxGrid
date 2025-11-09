@@ -24,29 +24,28 @@ type StreamSession struct {
 	acks          <-chan StreamAck
 }
 
-// NewStreamSession constructs a session that waits for acknowledgements when
-// buffered rows reach the provided highWaterMark. A highWaterMark of zero disables waiting.
+// NewStreamSession constructs a session that waits for acknowledgements when buffered rows
+// reach the provided highWaterMark. A highWaterMark of zero disables waiting.
 func NewStreamSession(requestID string, highWaterMark int, acks <-chan StreamAck) *StreamSession {
 	if highWaterMark < 0 {
 		highWaterMark = 0
 	}
+
 	return &StreamSession{
 		requestID:     requestID,
 		highWaterMark: highWaterMark,
-		bufferedRows:  0,
 		acks:          acks,
 	}
 }
 
-// HandleChunk accounts for the rows in the chunk and blocks until an acknowledgement
-// is received when thresholds are hit. The provided context should be cancelled on stream abort.
+// HandleChunk accounts for the rows in the chunk and blocks until an acknowledgement is received
+// when thresholds are hit. The provided context should be cancelled on stream abort.
 func (s *StreamSession) HandleChunk(ctx context.Context, chunk StreamChunk) error {
 	if s.highWaterMark == 0 {
 		return nil
 	}
 
 	s.bufferedRows += len(chunk.Rows)
-
 	if s.bufferedRows < s.highWaterMark && chunk.HasMore {
 		return nil
 	}

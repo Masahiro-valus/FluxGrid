@@ -11,7 +11,7 @@ func TestStreamSessionWaitsForAckAtHighWaterMark(t *testing.T) {
 	ackCh := make(chan StreamAck, 1)
 	session := NewStreamSession("req-1", 3, ackCh)
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*100)
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
 	if err := session.HandleChunk(ctx, StreamChunk{
