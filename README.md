@@ -63,6 +63,8 @@ go run ./cmd/core --stdio
 ```bash
 # DB コンテナの起動
 ./scripts/db/up.sh
+# (オプション) 起動完了待ち
+./scripts/db/wait.sh
 
 # 起動状態の確認
 docker compose ps
