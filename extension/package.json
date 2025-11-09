@@ -37,7 +37,9 @@
     "watch": "tsc -w -p .",
     "package": "vsce package",
     "dev": "npm-run-all --parallel watch:webview watch",
-    "watch:webview": "vite build --watch --mode development"
+    "watch:webview": "vite build --watch --mode development",
+    "test": "vitest run --config vitest.config.ts",
+    "test:watch": "vitest watch --config vitest.config.ts"
   },
   "dependencies": {
     "@vscode/webview-ui-toolkit": "^1.3.0"
@@ -55,7 +57,8 @@
     "tslib": "^2.6.2",
     "typescript": "^5.3.2",
     "vite": "^5.0.0",
-    "vsce": "^3.0.0"
+    "vitest": "^1.1.3",
+    "vsce": "2.15.0"
   }
 }
 

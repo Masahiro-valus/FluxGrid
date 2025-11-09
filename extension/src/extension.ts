@@ -1,12 +1,14 @@
 import * as vscode from "vscode";
 import { CoreClient } from "./coreClient";
 import { ResultsPanel } from "./webviewPanel";
+import { disposeConnectionStore, getConnectionStore } from "./storage";
 
 let coreClient: CoreClient | undefined;
 let coreReady = false;
 let panel: ResultsPanel | undefined;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
+  getConnectionStore(context);
   coreClient = new CoreClient(context);
 
   try {
@@ -93,11 +95,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(openPanel, executeQuery, {
     dispose: () => {
       coreClient?.dispose();
+      disposeConnectionStore();
     }
   });
 }
 
 export function deactivate(): void {
   coreClient?.dispose();
+  disposeConnectionStore();
 }
 

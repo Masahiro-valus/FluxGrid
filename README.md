@@ -85,7 +85,16 @@ postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable
 # Core Engine の最小疎通テスト
 cd /Users/mah/work/FluxGrid/core
 go test ./...
+
+# Extension のユニットテスト (Vitest)
+cd /Users/mah/work/FluxGrid/extension
+npm test
+
+# ウォッチ実行
+npm run test:watch
 ```
+
+Vitest は `tsconfig.vitest.json` を通じてテスト実行時のみ `vitest` 型定義を読み込む構成です。TDD での開発を推奨しており、`npm test` で失敗するテストを先に書いてから実装を追加してください。
 
 ## ライセンス
 

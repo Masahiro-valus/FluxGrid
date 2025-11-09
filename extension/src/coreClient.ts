@@ -106,7 +106,10 @@ export class CoreClient implements vscode.Disposable {
     const serialized = JSON.stringify(payload);
 
     const result = new Promise<T>((resolve, reject) => {
-      this.pending.set(requestId, { resolve, reject });
+      this.pending.set(requestId, {
+        resolve: (value) => resolve(value as T),
+        reject
+      });
     });
 
     if (token) {
@@ -117,7 +120,7 @@ export class CoreClient implements vscode.Disposable {
       });
     }
 
-      this.process.stdin.write(`${serialized}\n`, "utf8");
+    this.process.stdin.write(`${serialized}\n`, "utf8");
     return result;
   }
 
