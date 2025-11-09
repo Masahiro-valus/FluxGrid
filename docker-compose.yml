@@ -1,0 +1,36 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: fluxgrid-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: fluxgrid
+      POSTGRES_USER: fluxgrid
+      POSTGRES_PASSWORD: fluxgrid
+    ports:
+      - "55432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+  mysql:
+    image: mysql:8.0
+    container_name: fluxgrid-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: fluxgrid
+      MYSQL_DATABASE: fluxgrid
+      MYSQL_USER: fluxgrid
+      MYSQL_PASSWORD: fluxgrid
+    ports:
+      - "53306:3306"
+    command:
+      - --default-authentication-plugin=mysql_native_password
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+volumes:
+  pg_data:
+  mysql_data:
+

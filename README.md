@@ -54,20 +54,33 @@ go run ./cmd/core --stdio
 
 標準入出力経由で JSON-RPC リクエストを送るとレスポンスが得られます。
 
-## Docker での PostgreSQL 起動例
+## Docker ベースのテスト環境
+
+統合テスト用に `docker-compose.yml` を提供しています。PostgreSQL(MySQL) を起動/停止するには以下を使用してください。
 
 ```bash
-docker run --rm \
-  --name fluxgrid-pg \
-  -e POSTGRES_PASSWORD=postgres \
-  -p 5432:5432 \
-  postgres:15
+# DB コンテナの起動
+./scripts/db/up.sh
+
+# 起動状態の確認
+docker compose ps
+
+# 停止
+./scripts/db/down.sh
 ```
 
-拡張の設定 (`fluxgrid.developmentConnectionString`) もしくは `FLUXGRID_DSN` 環境変数に以下を指定すると、`SELECT 1;` が実行可能です。
+デフォルト設定:
+
+| サービス | ポート | ユーザー | パスワード | DB 名 |
+|----------|--------|----------|------------|-------|
+| Postgres | `55432` | fluxgrid | fluxgrid | fluxgrid |
+| MySQL    | `53306` | fluxgrid | fluxgrid | fluxgrid |
+
+Core の統合テストは今後のスプリントで追加予定ですが、`go test ./...` 実行前に上記コンテナを起動すると DSN が有効になります。
 
 ```
-postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable
+postgresql://fluxgrid:fluxgrid@localhost:55432/fluxgrid?sslmode=disable
+mysql://fluxgrid:fluxgrid@tcp(localhost:53306)/fluxgrid
 ```
 
 ## 最小稼働フロー
@@ -76,6 +89,12 @@ postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable
 2. 拡張をデバッグ実行 (`npm run dev` → VS Code Extension Host)
 3. SQL ファイルで `SELECT 1;` を選択し `⌘ + Enter` (または `FluxGrid: クエリを実行`)
 4. Webview パネルに「最新の結果を受信しました。」が表示され、通知で実行結果が確認できます
+
+### 接続管理パネル
+
+- `FluxGrid: Open Result Panel` コマンドで接続管理 UI を開くと、接続の追加/編集/削除が可能です
+- Webview 側で送信した操作は `connection.*` JSON-RPC メッセージとして拡張・Core に連携されます
+- 新規接続の検証は `connect.test` エンドポイント（PostgreSQL 対応済み）を経由してバックエンドで実施されます
 
 ## テスト
 

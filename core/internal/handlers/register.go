@@ -19,6 +19,7 @@ const (
 func Register(server *rpc.Server) {
 	server.Register("core.ping", pingHandler)
 	server.Register("query.execute", executeHandler)
+	server.Register("connect.test", connectTestHandler(defaultConnectionTester))
 	server.RegisterNotification("query.cancel", cancelHandler(server))
 }
 
@@ -52,6 +53,64 @@ type column struct {
 	Name     string `json:"name"`
 	DataType string `json:"dataType"`
 }
+
+type connectTestParams struct {
+	Driver string `json:"driver"`
+	DSN    string `json:"dsn"`
+	Options connectTestOptions `json:"options"`
+}
+
+type connectTestOptions struct {
+	TimeoutSeconds int    `json:"timeoutSeconds"`
+	SSLMode        string `json:"sslmode"`
+}
+
+type connectTestResult struct {
+	LatencyMs      float64           `json:"latencyMs"`
+	ServerVersion  string            `json:"serverVersion"`
+	ConnectionInfo map[string]string `json:"connectionInfo,omitempty"`
+}
+
+type connectionTester interface {
+	TestConnection(ctx context.Context, params connectTestParams) (connectTestResult, error)
+}
+
+type postgresConnectionTester struct{}
+
+func (postgresConnectionTester) TestConnection(ctx context.Context, params connectTestParams) (connectTestResult, error) {
+	timeout := params.Options.TimeoutSeconds
+	if timeout <= 0 {
+		timeout = 15
+	}
+
+	timeoutCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	conn, err := pgx.Connect(timeoutCtx, params.DSN)
+	if err != nil {
+		return connectTestResult{}, err
+	}
+	defer conn.Close(context.Background())
+
+	var version string
+	if err := conn.QueryRow(timeoutCtx, "select version()").Scan(&version); err != nil {
+		return connectTestResult{}, err
+	}
+
+	stats := conn.Stat()
+	info := map[string]string{
+		"backend_pid": fmt.Sprintf("%d", stats.PID),
+	}
+
+	return connectTestResult{
+		LatencyMs:      time.Since(start).Seconds() * 1000,
+		ServerVersion:  version,
+		ConnectionInfo: info,
+	}, nil
+}
+
+var defaultConnectionTester connectionTester = postgresConnectionTester{}
 
 func executeHandler(ctx context.Context, params json.RawMessage) (any, *rpc.Error) {
 	var payload executeParams
@@ -214,6 +273,58 @@ func cancelHandler(server *rpc.Server) rpc.NotificationFunc {
 		if !server.Cancel(requestID) {
 			logging.Logger().Warn().Str("request_id", requestID).Msg("query.cancel: request not found")
 		}
+	}
+}
+
+func connectTestHandler(tester connectionTester) rpc.HandlerFunc {
+	return func(ctx context.Context, raw json.RawMessage) (any, *rpc.Error) {
+		var payload connectTestParams
+		if len(raw) == 0 {
+			return nil, &rpc.Error{
+				Code:    -32602,
+				Message: "connection parameters are required",
+			}
+		}
+		if err := json.Unmarshal(raw, &payload); err != nil {
+			return nil, &rpc.Error{
+				Code:    -32602,
+				Message: "invalid parameters",
+				Data:    err.Error(),
+			}
+		}
+		if payload.Driver == "" {
+			return nil, &rpc.Error{
+				Code:    -32602,
+				Message: "driver is required",
+			}
+		}
+		if payload.DSN == "" {
+			return nil, &rpc.Error{
+				Code:    -32602,
+				Message: "DSN is required",
+			}
+		}
+
+		switch payload.Driver {
+		case "postgres":
+			// supported
+		default:
+			return nil, &rpc.Error{
+				Code:    -32601,
+				Message: fmt.Sprintf("driver not supported: %s", payload.Driver),
+			}
+		}
+
+		result, err := tester.TestConnection(ctx, payload)
+		if err != nil {
+			return nil, &rpc.Error{
+				Code:    -32020,
+				Message: "connection test failed",
+				Data:    err.Error(),
+			}
+		}
+
+		return result, nil
 	}
 }
 
