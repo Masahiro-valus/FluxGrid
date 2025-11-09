@@ -1,5 +1,7 @@
 # FluxGrid
 
+![CI](https://github.com/Masahiro-valus/FluxGrid/actions/workflows/ci.yml/badge.svg)
+
 FluxGrid は Cursor/VS Code 互換のデータベースクライアント拡張と Go 製 Core Engine から成るモノレポです。拡張は軽量 UI と資格情報の安全な取り扱いを担い、Core Engine が重い DB I/O・SSH・ストリーミング処理を担当します。
 
 ## リポジトリ構成
@@ -114,6 +116,25 @@ npm run test:watch
 ```
 
 Vitest は `tsconfig.vitest.json` を通じてテスト実行時のみ `vitest` 型定義を読み込む構成です。TDD での開発を推奨しており、`npm test` で失敗するテストを先に書いてから実装を追加してください。
+
+## CI
+
+GitHub Actions (`.github/workflows/ci.yml`) は `main` と Pull Request に対して次を自動実行します。
+
+- `npm ci`, `npm run build`, `npm test`
+- `go mod download`, `go test ./...`
+- テスト用 Postgres/MySQL コンテナを `services` として起動し、`FLUXGRID_*_DSN` を設定
+
+ローカルでも CI 相当の検証を行いたい場合は以下を目安にしてください。
+
+```bash
+./scripts/db/up.sh
+npm --prefix extension ci
+npm --prefix extension run build
+npm --prefix extension test
+go test ./core/...
+./scripts/db/down.sh
+```
 
 ## ライセンス
 
