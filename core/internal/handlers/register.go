@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/fluxgrid/core/internal/logging"
@@ -98,9 +99,11 @@ func (postgresConnectionTester) TestConnection(ctx context.Context, params conne
 		return connectTestResult{}, err
 	}
 
-	stats := conn.Stat()
 	info := map[string]string{
-		"backend_pid": fmt.Sprintf("%d", stats.PID),
+		"backend_pid": strconv.Itoa(int(conn.PgConn().PID())),
+	}
+	if appName := conn.PgConn().ParameterStatus("application_name"); appName != "" {
+		info["application_name"] = appName
 	}
 
 	return connectTestResult{
@@ -254,7 +257,8 @@ func cancelHandler(server *rpc.Server) rpc.NotificationFunc {
 
 		var payload cancelPayload
 		if err := json.Unmarshal(params, &payload); err != nil {
-			logging.Logger().Warn().Err(err).Msg("query.cancel: failed to parse parameters")
+			logger := logging.Logger()
+			logger.Warn().Err(err).Msg("query.cancel: failed to parse parameters")
 			return
 		}
 
@@ -271,7 +275,8 @@ func cancelHandler(server *rpc.Server) rpc.NotificationFunc {
 
 		requestID := fmt.Sprint(anyID)
 		if !server.Cancel(requestID) {
-			logging.Logger().Warn().Str("request_id", requestID).Msg("query.cancel: request not found")
+			logger := logging.Logger()
+			logger.Warn().Str("request_id", requestID).Msg("query.cancel: request not found")
 		}
 	}
 }

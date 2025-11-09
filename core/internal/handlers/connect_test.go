@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
-
-	"github.com/fluxgrid/core/internal/rpc"
 )
 
 type stubConnectionTester struct {
