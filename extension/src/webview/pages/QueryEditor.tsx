@@ -56,6 +56,26 @@ type QueryEditorInboundMessage =
   | { type: "query.execution.succeeded"; payload: QueryExecutionResult }
   | { type: "query.execution.failed"; error: string }
   | { type: "query.execution.cancelled" }
+  | { type: "query.stream.started"; payload: { requestId: string; columns: { name: string; dataType: string }[] } }
+  | {
+      type: "query.stream.chunk";
+      payload: {
+        requestId: string;
+        rows: unknown[][];
+        seq: number;
+        hasMore: boolean;
+        statistics?: { executionTimeMs?: number; networkLatencyMs?: number };
+      };
+    }
+  | {
+      type: "query.stream.complete";
+      payload: {
+        requestId: string;
+        statistics?: { executionTimeMs?: number; totalRows?: number };
+        columns?: { name: string; dataType: string }[];
+      };
+    }
+  | { type: "query.stream.error"; payload: { requestId: string; message: string } }
   | { type: "query.log.append"; payload: QueryLogEntry }
   | { type: "schema.list.result"; payload: SchemaNode[] };
 
@@ -118,6 +138,7 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ vscodeApi = defaultBri
   const [formatEnabled, setFormatEnabled] = useState<boolean>(false);
   const [themeVersion, setThemeVersion] = useState(0);
   const [logFilter, setLogFilter] = useState<string>("");
+  const [activeRequestId, setActiveRequestId] = useState<string | undefined>();
 
   useEffect(() => {
     const observer = new MutationObserver(() => {
@@ -210,6 +231,88 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ vscodeApi = defaultBri
           setStatus(t("status.queryCancelled"));
           setStatusTone("info");
           break;
+        case "query.stream.started":
+          setActiveRequestId(message.payload.requestId);
+          setIsExecuting(true);
+          setResult({
+            columns: message.payload.columns,
+            rows: [],
+            executionTimeMs: 0
+          });
+          setStatus(t("status.queryRunning"));
+          setStatusTone("info");
+          break;
+        case "query.stream.chunk":
+          if (message.payload.requestId !== activeRequestId) {
+            break;
+          }
+          let mergedCount = 0;
+          setResult((prev) => {
+            const columns = prev?.columns ?? [];
+            const rows = prev?.rows ?? [];
+            const merged = [...rows, ...message.payload.rows];
+            mergedCount = merged.length;
+            return {
+              columns,
+              rows: merged,
+              executionTimeMs: prev?.executionTimeMs ?? 0
+            };
+          });
+          setLogs((prev) => [
+            ...prev.slice(-MAX_LOG_ENTRIES + 1),
+            {
+              level: "info",
+              message: `Chunk ${message.payload.seq} (${message.payload.rows.length} rows)`,
+              timestamp: new Date().toISOString()
+            }
+          ]);
+          setStatus(t("results.rowCount", { count: mergedCount }));
+          setStatusTone("info");
+          break;
+        case "query.stream.complete":
+          if (message.payload.requestId !== activeRequestId) {
+            break;
+          }
+          setIsExecuting(false);
+          setActiveRequestId(undefined);
+          setResult((prev) => {
+            const columns =
+              message.payload.columns ?? prev?.columns ?? [];
+            const rows = prev?.rows ?? [];
+            return {
+              columns,
+              rows,
+              executionTimeMs:
+                message.payload.statistics?.executionTimeMs ?? prev?.executionTimeMs ?? 0
+            };
+          });
+          setStatus(
+            message.payload.statistics?.executionTimeMs
+              ? t("status.querySucceeded", {
+                  ms: message.payload.statistics.executionTimeMs.toFixed(1)
+                })
+              : t("status.querySucceeded", { ms: "0.0" })
+          );
+          setStatusTone("info");
+          break;
+        case "query.stream.error":
+          if (message.payload.requestId !== activeRequestId) {
+            break;
+          }
+          setIsExecuting(false);
+          setActiveRequestId(undefined);
+          setErrorMessage(message.payload.message);
+          setStatus(t("status.queryFailed"));
+          setStatusTone("error");
+          setLogs((prev) => [
+            ...prev.slice(-MAX_LOG_ENTRIES + 1),
+            {
+              level: "error",
+              message: message.payload.message,
+              timestamp: new Date().toISOString()
+            }
+          ]);
+          break;
         case "query.log.append":
           setLogs((prev) => [...prev.slice(-MAX_LOG_ENTRIES + 1), message.payload]);
           break;
@@ -222,7 +325,7 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ vscodeApi = defaultBri
     });
 
     return unsubscribe;
-  }, [vscodeApi, selectedConnectionId, t]);
+  }, [vscodeApi, selectedConnectionId, t, activeRequestId, result]);
 
   useEffect(() => {
     vscodeApi.postMessage({ type: "connection.list" });

@@ -32,7 +32,8 @@ describe("createQueryMessageRouter", () => {
     webview = fakeWebview();
     queryService = {
       execute: vi.fn(),
-      dispose: vi.fn()
+      dispose: vi.fn(),
+      onDidChange: vi.fn(() => ({ dispose: vi.fn() }))
     } as unknown as vi.Mocked<QueryService>;
     connectionService = {
       getConnection: vi.fn(async () => ({

@@ -6,6 +6,7 @@ describe("QueryService", () => {
   const createCoreClient = () => ({
     sendRequest: vi.fn(),
     sendNotification: vi.fn(),
+    onNotification: vi.fn(() => ({ dispose: vi.fn() })),
     dispose: vi.fn()
   });
 
@@ -32,18 +33,21 @@ describe("QueryService", () => {
       {
         sql: "SELECT 1",
         connection: { driver: "postgres", dsn: "postgres://..." },
-        options: { timeoutSeconds: 30 }
+        options: { timeoutSeconds: 30, mode: "batch" }
       },
       tokenSource
     );
 
     expect(coreClient.sendRequest).toHaveBeenCalledWith(
       "query.execute",
-      {
+      expect.objectContaining({
         sql: "SELECT 1",
         connection: { driver: "postgres", dsn: "postgres://..." },
-        options: { timeoutSeconds: 30 }
-      },
+        options: expect.objectContaining({
+          timeoutSeconds: 30,
+          mode: "batch"
+        })
+      }),
       tokenSource.token
     );
     expect(result.rows[0][0]).toBe(1);
@@ -61,7 +65,7 @@ describe("QueryService", () => {
       {
         sql: "SELECT 1",
         connection: { driver: "postgres", dsn: "postgres://..." },
-        options: {}
+        options: { mode: "batch" }
       },
       tokenSource
     );
@@ -97,7 +101,8 @@ describe("QueryService", () => {
       service.execute(
         {
           sql: "SELECT 1",
-          connection: { driver: "postgres", dsn: "postgres://..." }
+          connection: { driver: "postgres", dsn: "postgres://..." },
+          options: { mode: "batch" }
         },
         tokenSource
       )

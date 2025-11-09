@@ -115,7 +115,54 @@ export function createQueryMessageRouter(
     }
   });
 
-  disposables.push(listener);
+  const serviceSubscription = queryService.onDidChange((event) => {
+    switch (event.type) {
+      case "streamStarted":
+        void webview.postMessage({
+          type: "query.stream.started",
+          payload: {
+            requestId: event.requestId,
+            columns: event.columns
+          }
+        });
+        break;
+      case "streamChunk":
+        void webview.postMessage({
+          type: "query.stream.chunk",
+          payload: {
+            requestId: event.requestId,
+            rows: event.rows,
+            seq: event.seq,
+            hasMore: event.hasMore,
+            statistics: event.statistics
+          }
+        });
+        break;
+      case "streamComplete":
+        void webview.postMessage({
+          type: "query.stream.complete",
+          payload: {
+            requestId: event.requestId,
+            statistics: event.state.statistics,
+            columns: event.state.columns
+          }
+        });
+        break;
+      case "streamError":
+        void webview.postMessage({
+          type: "query.stream.error",
+          payload: {
+            requestId: event.requestId,
+            message: event.error.message
+          }
+        });
+        break;
+      default:
+        break;
+    }
+  });
+
+  disposables.push(listener, serviceSubscription);
 }
 
 async function resolveConnection(

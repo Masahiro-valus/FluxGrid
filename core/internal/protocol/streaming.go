@@ -1,7 +1,8 @@
 package protocol
 
-// StreamChunk represents a chunk of rows emitted from the core engine. The extension
-// may respond with acknowledgements to apply backpressure.
+import "context"
+
+// StreamChunk represents a batch of rows emitted from the core engine.
 type StreamChunk struct {
 	RequestID string
 	Seq       int
@@ -9,38 +10,23 @@ type StreamChunk struct {
 	HasMore   bool
 }
 
-// StreamAck is sent by the extension to signal the core that it may continue streaming.
+// StreamAck is sent by the extension to signal that the core may continue streaming.
 type StreamAck struct {
 	RequestID string
 	Seq       int
 }
 
-// StreamComplete captures terminal metadata about a streaming session.
-type StreamComplete struct {
-	RequestID string
-	Cursor    string
-	Statistics map[string]any
-}
-
-// StreamError represents a failure while streaming a result set.
-type StreamError struct {
-	RequestID string
-	Code      string
-	Message   string
-	Fatal     bool
-}
-
-// StreamSession coordinates acknowledgement thresholds for a logical query stream.
+// StreamSession coordinates backpressure using acknowledgements from the extension.
 type StreamSession struct {
 	requestID     string
 	highWaterMark int
 	bufferedRows  int
-	ackOut        chan<- StreamAck
+	acks          <-chan StreamAck
 }
 
-// NewStreamSession constructs a session that will flush acknowledgements to ackOut when
-// buffered rows reach the provided highWaterMark. A highWaterMark of zero disables auto-acks.
-func NewStreamSession(requestID string, highWaterMark int, ackOut chan<- StreamAck) *StreamSession {
+// NewStreamSession constructs a session that waits for acknowledgements when
+// buffered rows reach the provided highWaterMark. A highWaterMark of zero disables waiting.
+func NewStreamSession(requestID string, highWaterMark int, acks <-chan StreamAck) *StreamSession {
 	if highWaterMark < 0 {
 		highWaterMark = 0
 	}
@@ -48,52 +34,42 @@ func NewStreamSession(requestID string, highWaterMark int, ackOut chan<- StreamA
 		requestID:     requestID,
 		highWaterMark: highWaterMark,
 		bufferedRows:  0,
-		ackOut:        ackOut,
+		acks:          acks,
 	}
 }
 
-// HandleChunk inspects the incoming chunk and emits a StreamAck when thresholds are met.
-func (s *StreamSession) HandleChunk(chunk StreamChunk) {
-	if chunk.RequestID != "" {
-		s.requestID = chunk.RequestID
+// HandleChunk accounts for the rows in the chunk and blocks until an acknowledgement
+// is received when thresholds are hit. The provided context should be cancelled on stream abort.
+func (s *StreamSession) HandleChunk(ctx context.Context, chunk StreamChunk) error {
+	if s.highWaterMark == 0 {
+		return nil
 	}
 
 	s.bufferedRows += len(chunk.Rows)
-	if s.shouldAck(chunk.HasMore) {
-		s.flushAck(chunk.Seq)
+
+	if s.bufferedRows < s.highWaterMark && chunk.HasMore {
+		return nil
+	}
+
+	for {
+		select {
+		case ack := <-s.acks:
+			if ack.RequestID != "" && ack.RequestID != s.requestID {
+				continue
+			}
+			if ack.Seq < chunk.Seq {
+				continue
+			}
+			s.bufferedRows = 0
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 }
 
-// Reset clears the buffered state, intended to be called after completion or fatal errors.
+// Reset clears buffered state; should be invoked when the stream completes or errors.
 func (s *StreamSession) Reset() {
-	s.bufferedRows = 0
-}
-
-func (s *StreamSession) shouldAck(hasMore bool) bool {
-	if s.highWaterMark == 0 {
-		return !hasMore
-	}
-
-	if s.bufferedRows >= s.highWaterMark {
-		return true
-	}
-
-	if !hasMore {
-		return true
-	}
-
-	return false
-}
-
-func (s *StreamSession) flushAck(seq int) {
-	if s.ackOut == nil {
-		return
-	}
-
-	s.ackOut <- StreamAck{
-		RequestID: s.requestID,
-		Seq:       seq,
-	}
 	s.bufferedRows = 0
 }
 

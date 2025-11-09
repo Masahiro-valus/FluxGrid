@@ -48,6 +48,8 @@ type Server struct {
 	handlers      map[string]HandlerFunc
 	notifications map[string]NotificationFunc
 	inflight      sync.Map
+	writeMu       sync.Mutex
+	encoder       *json.Encoder
 }
 
 // NewServer constructs a server instance.
@@ -85,6 +87,7 @@ func (s *Server) Cancel(requestID string) bool {
 func (s *Server) Serve(reader io.Reader, writer io.Writer) error {
 	decoder := json.NewDecoder(reader)
 	encoder := json.NewEncoder(writer)
+	s.encoder = encoder
 
 	for {
 		var req Request
@@ -115,7 +118,7 @@ func (s *Server) Serve(reader io.Reader, writer io.Writer) error {
 					Message: "method not found",
 				},
 			}
-			if err := encoder.Encode(resp); err != nil {
+			if err := s.writeJSON(resp); err != nil {
 				s.logger.Error().Err(err).Msg("failed to encode response")
 			}
 			continue
@@ -126,6 +129,7 @@ func (s *Server) Serve(reader io.Reader, writer io.Writer) error {
 		if key, ok := canonicalID(req.ID); ok {
 			inflightKey = key
 			s.inflight.Store(key, cancel)
+			ctx = context.WithValue(ctx, ctxRequestIDKey{}, key)
 		}
 
 		result, rpcErr := handler(ctx, req.Params)
@@ -146,7 +150,7 @@ func (s *Server) Serve(reader io.Reader, writer io.Writer) error {
 			resp.Result = result
 		}
 
-		if err := encoder.Encode(resp); err != nil {
+		if err := s.writeJSON(resp); err != nil {
 			s.logger.Error().Err(err).Msg("failed to encode response")
 		}
 	}
@@ -170,5 +174,41 @@ func canonicalID(raw *json.RawMessage) (string, bool) {
 	default:
 		return fmt.Sprint(id), true
 	}
+}
+
+type ctxRequestIDKey struct{}
+
+// RequestIDFromContext extracts the JSON-RPC request identifier from the context.
+func RequestIDFromContext(ctx context.Context) (string, bool) {
+	if ctx == nil {
+		return "", false
+	}
+	if value := ctx.Value(ctxRequestIDKey{}); value != nil {
+		if id, ok := value.(string); ok {
+			return id, true
+		}
+	}
+	return "", false
+}
+
+func (s *Server) writeJSON(v interface{}) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	if s.encoder == nil {
+		return fmt.Errorf("json encoder not initialized")
+	}
+	return s.encoder.Encode(v)
+}
+
+// Notify emits a JSON-RPC notification to the connected client.
+func (s *Server) Notify(method string, params interface{}) error {
+	payload := map[string]interface{}{
+		"jsonrpc": "2.0",
+		"method":  method,
+	}
+	if params != nil {
+		payload["params"] = params
+	}
+	return s.writeJSON(payload)
 }
 

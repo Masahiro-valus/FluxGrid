@@ -130,8 +130,7 @@ export class QueryStreamAssembler {
     this.cursor = message.cursor ?? this.cursor;
 
     const shouldAck =
-      this.options.highWaterMark > 0 &&
-      this.bufferedSinceAck >= this.options.highWaterMark;
+      this.options.highWaterMark > 0 && this.bufferedSinceAck >= this.options.highWaterMark;
 
     if (shouldAck || !message.hasMore) {
       this.options.onAck?.({
@@ -161,9 +160,7 @@ export class QueryStreamAssembler {
   }
 
   private handleError(message: QueryStreamErrorMessage): void {
-    const error = new Error(
-      `Stream error (${message.code}): ${message.message}`
-    );
+    const error = new Error(`Stream error (${message.code}): ${message.message}`);
 
     this.options.onError?.(error);
     // reset buffering to avoid leaking stale state
@@ -175,4 +172,3 @@ export class QueryStreamAssembler {
     this.completeStatistics = undefined;
   }
 }
-

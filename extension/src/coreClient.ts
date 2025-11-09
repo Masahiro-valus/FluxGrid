@@ -22,6 +22,12 @@ interface JsonRpcRequest {
   params?: unknown;
 }
 
+interface JsonRpcNotification {
+  jsonrpc: "2.0";
+  method: string;
+  params?: unknown;
+}
+
 export class CoreClient implements vscode.Disposable {
   private process: cp.ChildProcessWithoutNullStreams | undefined;
   private readonly pending = new Map<
@@ -33,6 +39,7 @@ export class CoreClient implements vscode.Disposable {
   >();
   private buffer = "";
   private nextRequestId = 1;
+  private readonly notificationListeners = new Map<string, Set<(params: unknown) => void>>();
 
   constructor(private readonly context: vscode.ExtensionContext) {}
 
@@ -169,9 +176,10 @@ export class CoreClient implements vscode.Disposable {
 
   private handleMessage(raw: string): void {
     try {
-      const message = JSON.parse(raw) as JsonRpcResponse;
-      if (message.id !== undefined) {
-        const responseId = String(message.id);
+      const message = JSON.parse(raw) as JsonRpcResponse | JsonRpcNotification;
+      if (typeof (message as JsonRpcResponse).id !== "undefined") {
+        const response = message as JsonRpcResponse;
+        const responseId = String(response.id);
         const pending = this.pending.get(responseId);
         if (!pending) {
           return;
@@ -179,18 +187,57 @@ export class CoreClient implements vscode.Disposable {
 
         this.pending.delete(responseId);
 
-        if (message.error) {
-          pending.reject(new Error(message.error.message));
+        if (response.error) {
+          pending.reject(new Error(response.error.message));
           return;
         }
 
-        pending.resolve(message.result);
-      } else {
-        console.log("Received notification:", message);
+        pending.resolve(response.result);
+        return;
+      }
+
+      if ("method" in message) {
+        this.handleNotification(message as JsonRpcNotification);
       }
     } catch (error) {
       console.error("Failed to parse JSON-RPC message", error);
     }
+  }
+
+  private handleNotification(message: JsonRpcNotification): void {
+    const listeners = this.notificationListeners.get(message.method);
+    if (!listeners || listeners.size === 0) {
+      return;
+    }
+    for (const listener of listeners) {
+      try {
+        listener(message.params);
+      } catch (error) {
+        console.error(`CoreClient notification listener error for ${message.method}`, error);
+      }
+    }
+  }
+
+  onNotification(method: string, listener: (params: unknown) => void): vscode.Disposable {
+    let listeners = this.notificationListeners.get(method);
+    if (!listeners) {
+      listeners = new Set();
+      this.notificationListeners.set(method, listeners);
+    }
+    listeners.add(listener);
+
+    return {
+      dispose: () => {
+        const current = this.notificationListeners.get(method);
+        if (!current) {
+          return;
+        }
+        current.delete(listener);
+        if (current.size === 0) {
+          this.notificationListeners.delete(method);
+        }
+      }
+    };
   }
 
   private async resolveBinaryPath(): Promise<string> {

@@ -1,52 +1,65 @@
 package protocol
 
 import (
+	"context"
+	"errors"
 	"testing"
+	"time"
 )
 
-func TestStreamSessionEmitsAckAtHighWaterMark(t *testing.T) {
-	acks := make(chan StreamAck, 2)
-	session := NewStreamSession("req-1", 3, acks)
+func TestStreamSessionWaitsForAckAtHighWaterMark(t *testing.T) {
+	ackCh := make(chan StreamAck, 1)
+	session := NewStreamSession("req-1", 3, ackCh)
 
-	session.HandleChunk(StreamChunk{
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*100)
+	defer cancel()
+
+	if err := session.HandleChunk(ctx, StreamChunk{
 		RequestID: "req-1",
 		Seq:       1,
 		Rows: [][]any{
 			{1}, {2},
 		},
 		HasMore: true,
-	})
+	}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- session.HandleChunk(ctx, StreamChunk{
+			RequestID: "req-1",
+			Seq:       2,
+			Rows: [][]any{
+				{3},
+			},
+			HasMore: true,
+		})
+	}()
 
 	select {
-	case <-acks:
-		t.Fatalf("unexpected ack for first chunk")
+	case err := <-done:
+		if err == nil {
+			t.Fatal("expected handler to block until ack")
+		}
 	default:
 	}
 
-	session.HandleChunk(StreamChunk{
-		RequestID: "req-1",
-		Seq:       2,
-		Rows: [][]any{
-			{3},
-		},
-		HasMore: true,
-	})
+	ackCh <- StreamAck{RequestID: "req-1", Seq: 2}
 
-	select {
-	case ack := <-acks:
-		if ack.Seq != 2 {
-			t.Fatalf("expected ack seq 2, got %d", ack.Seq)
-		}
-	default:
-		t.Fatal("expected ack after reaching high water mark")
+	if err := <-done; err != nil {
+		t.Fatalf("expected nil error after ack, got %v", err)
 	}
 }
 
-func TestStreamSessionAckOnFinalChunkWhenBelowThreshold(t *testing.T) {
-	acks := make(chan StreamAck, 1)
-	session := NewStreamSession("req-1", 5, acks)
+func TestStreamSessionFlushesOnFinalChunk(t *testing.T) {
+	ackCh := make(chan StreamAck, 1)
+	session := NewStreamSession("req-1", 5, ackCh)
 
-	session.HandleChunk(StreamChunk{
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	err := session.HandleChunk(ctx, StreamChunk{
 		RequestID: "req-1",
 		Seq:       1,
 		Rows: [][]any{
@@ -56,46 +69,55 @@ func TestStreamSessionAckOnFinalChunkWhenBelowThreshold(t *testing.T) {
 		HasMore: false,
 	})
 
-	select {
-	case ack := <-acks:
-		if ack.Seq != 1 {
-			t.Fatalf("expected final ack seq 1, got %d", ack.Seq)
-		}
-	default:
-		t.Fatal("expected ack for final chunk even below threshold")
+	if err == nil || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected deadline exceeded, got %v", err)
 	}
 }
 
 func TestStreamSessionResetClearsBufferedRows(t *testing.T) {
-	acks := make(chan StreamAck, 1)
-	session := NewStreamSession("req-1", 2, acks)
+	ackCh := make(chan StreamAck, 1)
+	session := NewStreamSession("req-1", 2, ackCh)
 
-	session.HandleChunk(StreamChunk{
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	if err := session.HandleChunk(ctx, StreamChunk{
 		RequestID: "req-1",
 		Seq:       1,
 		Rows: [][]any{
 			{1},
 		},
 		HasMore: true,
-	})
+	}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	session.Reset()
-	session.HandleChunk(StreamChunk{
-		RequestID: "req-1",
-		Seq:       2,
-		Rows: [][]any{
-			{2},
-		},
-		HasMore: false,
-	})
+
+	done := make(chan error, 1)
+	go func() {
+		done <- session.HandleChunk(ctx, StreamChunk{
+			RequestID: "req-1",
+			Seq:       2,
+			Rows: [][]any{
+				{2},
+			},
+			HasMore: false,
+		})
+	}()
 
 	select {
-	case ack := <-acks:
-		if ack.Seq != 2 {
-			t.Fatalf("expected ack seq 2 after reset, got %d", ack.Seq)
+	case err := <-done:
+		if err == nil {
+			t.Fatal("expected block until ack after reset")
 		}
 	default:
-		t.Fatal("expected ack after reset on final chunk")
+	}
+
+	ackCh <- StreamAck{RequestID: "req-1", Seq: 2}
+
+	if err := <-done; err != nil {
+		t.Fatalf("unexpected error after ack: %v", err)
 	}
 }
 
