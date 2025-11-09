@@ -6,7 +6,80 @@
     <title>FluxGrid</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <main id="connection-panel">
+        <section class="header">
+          <h1>FluxGrid</h1>
+          <p>Manage your database connections and run queries in seconds.</p>
+        </section>
+
+        <section class="status-bar">
+          <span id="connection-status">Initializing...</span>
+          <div class="status-actions">
+            <button id="refresh-connections" type="button">Refresh</button>
+            <button id="new-connection-button" type="button">New Connection</button>
+          </div>
+        </section>
+
+        <section class="content">
+          <aside class="connections">
+            <h2>Connections</h2>
+            <ul id="connection-list" aria-label="Saved connections"></ul>
+          </aside>
+
+          <section class="form-section">
+            <form id="connection-form" autocomplete="off">
+              <input type="hidden" id="connection-id" />
+
+              <div class="field">
+                <label for="name">Name</label>
+                <input id="name" name="name" required />
+              </div>
+
+              <div class="field">
+                <label for="driver">Driver</label>
+                <select id="driver" name="driver">
+                  <option value="postgres">PostgreSQL</option>
+                  <option value="mysql">MySQL</option>
+                  <option value="sqlite">SQLite</option>
+                </select>
+              </div>
+
+              <div class="field-row">
+                <div class="field">
+                  <label for="host">Host</label>
+                  <input id="host" name="host" required />
+                </div>
+                <div class="field small">
+                  <label for="port">Port</label>
+                  <input id="port" name="port" type="number" min="1" max="65535" value="5432" required />
+                </div>
+              </div>
+
+              <div class="field">
+                <label for="database">Database</label>
+                <input id="database" name="database" required />
+              </div>
+
+              <div class="field">
+                <label for="username">Username</label>
+                <input id="username" name="username" />
+              </div>
+
+              <div class="field">
+                <label for="password">Password</label>
+                <input id="password" name="password" type="password" />
+              </div>
+
+              <div class="form-actions">
+                <button id="delete-button" type="button" class="secondary">Delete</button>
+                <button id="save-button" type="submit">Save Connection</button>
+              </div>
+            </form>
+          </section>
+        </section>
+      </main>
+    </div>
     <script type="module" src="/main.ts"></script>
   </body>
 </html>

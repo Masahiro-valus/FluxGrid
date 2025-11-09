@@ -1,9 +1,15 @@
 import * as vscode from "vscode";
+import { ConnectionService } from "./services/connectionService";
+import { createConnectionMessageRouter } from "./webview/connectionMessageRouter";
 
 export class ResultsPanel implements vscode.Disposable {
   private static current: ResultsPanel | undefined;
+  private readonly disposables: vscode.Disposable[] = [];
 
-  static createOrShow(context: vscode.ExtensionContext): ResultsPanel {
+  static createOrShow(
+    context: vscode.ExtensionContext,
+    service: ConnectionService
+  ): ResultsPanel {
     if (ResultsPanel.current) {
       ResultsPanel.current.panel.reveal(vscode.ViewColumn.Beside);
       return ResultsPanel.current;
@@ -19,36 +25,38 @@ export class ResultsPanel implements vscode.Disposable {
       }
     );
 
-    ResultsPanel.current = new ResultsPanel(panel, context);
+    ResultsPanel.current = new ResultsPanel(panel, context, service);
     return ResultsPanel.current;
   }
 
   private constructor(
     private readonly panel: vscode.WebviewPanel,
-    private readonly context: vscode.ExtensionContext
+    private readonly context: vscode.ExtensionContext,
+    private readonly connectionService: ConnectionService
   ) {
     this.panel.webview.html = this.getHtml();
 
     this.panel.onDidDispose(() => {
-      ResultsPanel.current = undefined;
+      this.dispose();
     });
 
-    this.panel.webview.onDidReceiveMessage((message) => {
-      if (message?.type === "ready") {
-        this.setStatus("Initializing Core Engine...");
-      }
-    });
+    createConnectionMessageRouter(this.panel.webview, this.connectionService, this.disposables);
   }
 
   setStatus(message: string): void {
     this.panel.webview.postMessage({
-      type: "core-status",
+      type: "connection.status",
       payload: message
     });
   }
 
   dispose(): void {
-    this.panel.dispose();
+    while (this.disposables.length) {
+      this.disposables.pop()?.dispose();
+    }
+    if (ResultsPanel.current === this) {
+      ResultsPanel.current = undefined;
+    }
   }
 
   private getHtml(): string {
@@ -76,4 +84,3 @@ export class ResultsPanel implements vscode.Disposable {
 </html>`;
   }
 }
-

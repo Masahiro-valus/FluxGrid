@@ -1,24 +1,154 @@
+* {
+  box-sizing: border-box;
+}
+
 body {
-  background-color: #0e151f;
-  color: #f5f6fa;
+  background-color: #0f172a;
+  color: #f8fafc;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   margin: 0;
-  padding: 16px;
 }
 
-main {
+.connection-panel {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 24px;
+  padding: 24px;
+  min-height: 100vh;
+}
+
+.connection-list-section,
+.connection-detail-section {
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 14px;
+  padding: 20px;
+}
+
+.connection-list-section h2 {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(148, 163, 184, 0.9);
+}
+
+#connection-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 6px;
 }
 
-.header h1 {
-  margin: 0 0 4px 0;
+#connection-list li {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(148, 163, 184, 0.12);
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.2s ease;
 }
 
-.status {
-  padding: 12px;
+#connection-list li:hover,
+#connection-list li:focus {
+  background: rgba(59, 130, 246, 0.55);
+  outline: none;
+}
+
+#connection-list li.selected {
+  background: rgba(59, 130, 246, 0.7);
+}
+
+form {
+  display: grid;
+  gap: 14px;
+}
+
+fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: none;
+  margin: 0;
+  padding: 0;
+}
+
+label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(148, 163, 184, 0.85);
+}
+
+input,
+select {
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.35);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.08);
+  padding: 10px 12px;
+  color: inherit;
+  font-size: 14px;
+}
+
+input:focus,
+select:focus {
+  outline: 2px solid rgba(59, 130, 246, 0.9);
+  outline-offset: 1px;
+}
+
+.form-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+button {
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+
+button#save-button {
+  background: rgba(59, 130, 246, 0.9);
+  color: white;
+}
+
+button#delete-button {
+  background: rgba(248, 113, 113, 0.1);
+  color: rgba(248, 113, 113, 0.95);
+}
+
+button#new-connection-button {
+  background: rgba(148, 163, 184, 0.2);
+  color: rgba(226, 232, 240, 0.95);
+}
+
+button:hover {
+  transform: translateY(-1px);
+}
+
+#connection-status {
+  margin-top: 16px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(148, 163, 184, 0.1);
+  color: rgba(226, 232, 240, 0.9);
+}
+
+#connection-status[data-tone="error"] {
+  background: rgba(248, 113, 113, 0.12);
+  color: rgba(248, 113, 113, 0.95);
+}
+
+@media (max-width: 900px) {
+  .connection-panel {
+    grid-template-columns: 1fr;
+  }
 }
 

@@ -25,7 +25,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   }
 
   const openPanel = vscode.commands.registerCommand("fluxgrid.openPanel", () => {
-    panel = ResultsPanel.createOrShow(context);
+    if (!connectionService) {
+      vscode.window.showErrorMessage("Connection service is not available.");
+      return;
+    }
+    panel = ResultsPanel.createOrShow(context, connectionService);
     panel.setStatus(coreReady ? "Ready for queries" : "Initializing Core Engine...");
   });
 
@@ -87,7 +91,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       vscode.window.setStatusBarMessage(`FluxGrid: ${message}`, 5000);
       vscode.window.showInformationMessage(message);
 
-      panel = ResultsPanel.createOrShow(context);
+      if (!connectionService) {
+        vscode.window.showErrorMessage("Connection service is not available.");
+        return;
+      }
+      panel = ResultsPanel.createOrShow(context, connectionService);
       panel.setStatus("Received latest results.");
     } catch (error) {
       vscode.window.showErrorMessage(`Query failed: ${String(error)}`);
@@ -101,6 +109,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     dispose: () => {
       coreClient?.dispose();
       disposeConnectionStore();
+      connectionService = undefined;
     }
   });
 }
