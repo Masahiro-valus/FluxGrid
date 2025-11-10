@@ -372,210 +372,180 @@ func executeClassic(ctx context.Context, payload executeParams) (any, *rpc.Error
 }
 
 func executeStream(
-	ctx context.Context,
+	_ context.Context,
 	server *rpc.Server,
 	streams *streamManager,
 	requestID string,
 	payload executeParams,
 ) (any, *rpc.Error) {
 	logger := logging.Logger()
-	timeoutCtx, cancel := context.WithTimeout(ctx, time.Duration(payload.Options.TimeoutSeconds)*time.Second)
-	defer cancel()
-
-	conn, err := pgx.Connect(timeoutCtx, payload.Connection.DSN)
-	if err != nil {
-		return nil, &rpc.Error{
-			Code:    -32010,
-			Message: "failed to connect to database",
-			Data:    err.Error(),
-		}
-	}
-	defer conn.Close(context.Background())
-
-	streamCtx, streamCancel := context.WithCancel(timeoutCtx)
-	defer streamCancel()
-
-	rows, err := conn.Query(streamCtx, payload.SQL)
-	if err != nil {
-		return nil, &rpc.Error{
-			Code:    -32011,
-			Message: "query execution failed",
-			Data:    err.Error(),
-		}
-	}
-	defer rows.Close()
-
-	fields := rows.FieldDescriptions()
-	columns := make([]column, len(fields))
-	for i, field := range fields {
-		columns[i] = column{
-			Name:     field.Name,
-			DataType: fmt.Sprintf("%d", field.DataTypeOID),
-		}
-	}
 
 	ackCh := make(chan protocol.StreamAck, 1)
 	session := protocol.NewStreamSession(requestID, payload.Options.Stream.HighWaterMark, ackCh)
+
+	runCtx, runCancel := context.WithCancel(context.Background())
 	streams.register(requestID, &streamSessionState{
 		ackCh:  ackCh,
-		cancel: streamCancel,
+		cancel: runCancel,
 	})
-	defer streams.unregister(requestID)
 
-	startPayload := map[string]any{
-		"requestId": requestID,
-		"cursor":    "",
-		"columns":   columns,
-		"rowCount":  nil,
-		"pace":      "auto",
-	}
+	go func() {
+		defer streams.unregister(requestID)
+		defer runCancel()
 
-	if err := server.Notify("query.stream.start", startPayload); err != nil {
-		logger.Error().Err(err).Str("request_id", requestID).Msg("failed to send stream start notification")
-		return nil, &rpc.Error{
-			Code:    -32031,
-			Message: "failed to send stream start",
-			Data:    err.Error(),
+		streamCtx, cancelTimeout := context.WithTimeout(runCtx, time.Duration(payload.Options.TimeoutSeconds)*time.Second)
+		defer cancelTimeout()
+
+		conn, err := pgx.Connect(streamCtx, payload.Connection.DSN)
+		if err != nil {
+			notifyStreamError(server, requestID, "CONNECTION_ERROR", err.Error(), true)
+			return
 		}
-	}
+		defer conn.Close(context.Background())
 
-	fetchSize := payload.Options.Stream.FetchSize
-	batch := make([][]interface{}, 0, fetchSize)
-	seq := 1
-	totalRows := 0
-	startTime := time.Now()
+		rows, err := conn.Query(streamCtx, payload.SQL)
+		if err != nil {
+			notifyStreamError(server, requestID, "EXECUTION_ERROR", err.Error(), true)
+			return
+		}
+		defer rows.Close()
 
-	sendChunk := func(hasMore bool) *rpc.Error {
-		if len(batch) == 0 {
+		fields := rows.FieldDescriptions()
+		columns := make([]column, len(fields))
+		for i, field := range fields {
+			columns[i] = column{
+				Name:     field.Name,
+				DataType: fmt.Sprintf("%d", field.DataTypeOID),
+			}
+		}
+
+		startPayload := map[string]any{
+			"requestId": requestID,
+			"cursor":    "",
+			"columns":   columns,
+			"rowCount":  nil,
+			"pace":      "auto",
+		}
+
+		if err := server.Notify("query.stream.start", startPayload); err != nil {
+			logger.Error().Err(err).Str("request_id", requestID).Msg("failed to send stream start notification")
+			return
+		}
+
+		fetchSize := payload.Options.Stream.FetchSize
+		batch := make([][]interface{}, 0, fetchSize)
+		seq := 1
+		totalRows := 0
+		startTime := time.Now()
+
+		sendChunk := func(hasMore bool) error {
+			if len(batch) == 0 {
+				return nil
+			}
+
+			chunkData := make([][]interface{}, len(batch))
+			copy(chunkData, batch)
+
+			chunkPayload := map[string]any{
+				"requestId": requestID,
+				"seq":       seq,
+				"rows":      chunkData,
+				"hasMore":   hasMore,
+			}
+
+			if err := server.Notify("query.stream.chunk", chunkPayload); err != nil {
+				logger.Error().Err(err).Str("request_id", requestID).Msg("failed to send stream chunk")
+				return err
+			}
+
+			if err := session.HandleChunk(streamCtx, protocol.StreamChunk{
+				RequestID: requestID,
+				Seq:       seq,
+				Rows:      chunkData,
+				HasMore:   hasMore,
+			}); err != nil {
+				return err
+			}
+
+			seq++
+			batch = make([][]interface{}, 0, fetchSize)
 			return nil
 		}
 
-		chunkData := make([][]interface{}, len(batch))
-		copy(chunkData, batch)
-
-		chunkPayload := map[string]any{
-			"requestId": requestID,
-			"seq":       seq,
-			"rows":      chunkData,
-			"hasMore":   hasMore,
-		}
-
-		if err := server.Notify("query.stream.chunk", chunkPayload); err != nil {
-			logger.Error().Err(err).Str("request_id", requestID).Msg("failed to send stream chunk")
-			return &rpc.Error{
-				Code:    -32032,
-				Message: "failed to send stream chunk",
-				Data:    err.Error(),
-			}
-		}
-
-		if err := session.HandleChunk(streamCtx, protocol.StreamChunk{
-			RequestID: requestID,
-			Seq:       seq,
-			Rows:      chunkData,
-			HasMore:   hasMore,
-		}); err != nil {
-			switch {
-			case errors.Is(err, context.Canceled):
-				notifyStreamError(server, requestID, "CANCELLED", "stream cancelled", false)
-				return &rpc.Error{
-					Code:    -32033,
-					Message: "stream cancelled",
-				}
-			case errors.Is(err, context.DeadlineExceeded):
-				notifyStreamError(server, requestID, "ACK_TIMEOUT", "stream acknowledgement timeout", true)
-				return &rpc.Error{
-					Code:    -32034,
-					Message: "stream acknowledgement timeout",
-				}
+	loop:
+		for rows.Next() {
+			select {
+			case <-streamCtx.Done():
+				break loop
 			default:
-				notifyStreamError(server, requestID, "STREAM_ABORTED", err.Error(), true)
-				return &rpc.Error{
-					Code:    -32035,
-					Message: "stream aborted",
-					Data:    err.Error(),
+			}
+
+			values, err := rows.Values()
+			if err != nil {
+				notifyStreamError(server, requestID, "READ_ERROR", err.Error(), true)
+				return
+			}
+
+			row := make([]interface{}, len(values))
+			for i, value := range values {
+				row[i] = normalizeValue(value)
+			}
+
+			batch = append(batch, row)
+			totalRows++
+
+			if len(batch) >= fetchSize {
+				if err := sendChunk(true); err != nil {
+					handleStreamChunkError(server, requestID, err)
+					return
 				}
 			}
 		}
 
-		seq++
-		batch = make([][]interface{}, 0, fetchSize)
-		return nil
-	}
+		if len(batch) > 0 {
+			if err := sendChunk(false); err != nil {
+				handleStreamChunkError(server, requestID, err)
+				return
+			}
+		}
 
-	for rows.Next() {
-		values, err := rows.Values()
-		if err != nil {
+		if err := rows.Err(); err != nil {
 			notifyStreamError(server, requestID, "READ_ERROR", err.Error(), true)
-			return &rpc.Error{
-				Code:    -32012,
-				Message: "failed to read result row",
-				Data:    err.Error(),
-			}
+			return
 		}
 
-		row := make([]interface{}, len(values))
-		for i, value := range values {
-			row[i] = normalizeValue(value)
+		if err := streamCtx.Err(); err != nil && !errors.Is(err, context.Canceled) {
+			handleStreamChunkError(server, requestID, err)
+			return
 		}
 
-		batch = append(batch, row)
-		totalRows++
-
-		if len(batch) >= fetchSize {
-			if rpcErr := sendChunk(true); rpcErr != nil {
-				return nil, rpcErr
-			}
+		durationMs := time.Since(startTime).Seconds() * 1000
+		completePayload := map[string]any{
+			"requestId": requestID,
+			"cursor":    "",
+			"statistics": map[string]any{
+				"executionTimeMs": durationMs,
+				"totalRows":       totalRows,
+			},
 		}
-	}
 
-	if len(batch) > 0 {
-		if rpcErr := sendChunk(false); rpcErr != nil {
-			return nil, rpcErr
+		if err := server.Notify("query.stream.complete", completePayload); err != nil {
+			logger.Error().Err(err).Str("request_id", requestID).Msg("failed to send stream completion notification")
+			return
 		}
-	}
 
-	if err := rows.Err(); err != nil {
-		notifyStreamError(server, requestID, "READ_ERROR", err.Error(), true)
-		return nil, &rpc.Error{
-			Code:    -32012,
-			Message: "error occurred while reading rows",
-			Data:    err.Error(),
-		}
-	}
+		session.Reset()
 
-	durationMs := time.Since(startTime).Seconds() * 1000
-
-	completePayload := map[string]any{
-		"requestId": requestID,
-		"cursor":    "",
-		"statistics": map[string]any{
-			"executionTimeMs": durationMs,
-			"totalRows":       totalRows,
-		},
-	}
-
-	if err := server.Notify("query.stream.complete", completePayload); err != nil {
-		logger.Error().Err(err).Str("request_id", requestID).Msg("failed to send stream completion notification")
-		return nil, &rpc.Error{
-			Code:    -32036,
-			Message: "failed to send stream completion",
-			Data:    err.Error(),
-		}
-	}
-
-	session.Reset()
-
-	logger.Info().
-		Str("driver", payload.Connection.Driver).
-		Int("row_count", totalRows).
-		Float64("duration_ms", durationMs).
-		Msg("query.execute streaming completed")
+		logger.Info().
+			Str("driver", payload.Connection.Driver).
+			Int("row_count", totalRows).
+			Float64("duration_ms", durationMs).
+			Msg("query.execute streaming completed")
+	}()
 
 	return map[string]any{
 		"mode":      "stream",
 		"requestId": requestID,
-		"rows":      totalRows,
 	}, nil
 }
 
@@ -588,6 +558,19 @@ func notifyStreamError(server *rpc.Server, requestID, code, message string, fata
 	}
 	if err := server.Notify("query.stream.error", payload); err != nil {
 		logging.Logger().Error().Err(err).Str("request_id", requestID).Msg("failed to send stream error notification")
+	}
+}
+
+func handleStreamChunkError(server *rpc.Server, requestID string, err error) {
+	switch {
+	case err == nil:
+		return
+	case errors.Is(err, context.Canceled):
+		notifyStreamError(server, requestID, "CANCELLED", "stream cancelled", false)
+	case errors.Is(err, context.DeadlineExceeded):
+		notifyStreamError(server, requestID, "ACK_TIMEOUT", "stream acknowledgement timeout", true)
+	default:
+		notifyStreamError(server, requestID, "STREAM_ABORTED", err.Error(), true)
 	}
 }
 
