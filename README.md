@@ -102,22 +102,21 @@ mysql://fluxgrid:fluxgrid@tcp(localhost:53306)/fluxgrid
 
 ## テスト
 
-統合テストフレームワークは次スプリントで導入予定ですが、当面は以下で疎通確認できます。
+統合テストフレームワークは順次拡充予定ですが、現時点でも以下のコマンドでローカル TDD サイクルと CI 相当の検証が行えます。
 
 ```bash
-# Core Engine の最小疎通テスト
+# Extension (Vitest)
+cd /Users/mah/work/FluxGrid/extension
+npm test           # 1 回だけ実行
+npm run test:watch # 変更を監視しながら実行
+npm run lint       # ESLint + Prettier によるスタイルチェック
+
+# Core Engine (Go)
 cd /Users/mah/work/FluxGrid/core
 go test ./...
-
-# Extension のユニットテスト (Vitest)
-cd /Users/mah/work/FluxGrid/extension
-npm test
-
-# ウォッチ実行
-npm run test:watch
 ```
 
-Vitest は `tsconfig.vitest.json` を通じてテスト実行時のみ `vitest` 型定義を読み込む構成です。TDD での開発を推奨しており、`npm test` で失敗するテストを先に書いてから実装を追加してください。
+Vitest は `vitest.config.ts` と `tsconfig.vitest.json` によってテスト時のみ型定義を切り替える構成になっています。`npm test` が失敗している状態から実装を加える形で TDD を進めてください。
 
 ## CI
 
