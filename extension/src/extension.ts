@@ -6,6 +6,7 @@ import { ConnectionService } from "./services/connectionService";
 import { registerConnectionCommands } from "./commands/connectionCommands";
 import { QueryService } from "./services/queryService";
 import { SchemaService } from "./services/schemaService";
+import { LogService } from "./services/logService";
 
 let coreClient: CoreClient | undefined;
 let coreReady = false;
@@ -13,14 +14,16 @@ let panel: ResultsPanel | undefined;
 let connectionService: ConnectionService | undefined;
 let queryService: QueryService | undefined;
 let schemaService: SchemaService | undefined;
+let logService: LogService | undefined;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const connectionStore = getConnectionStore(context);
   connectionService = new ConnectionService(connectionStore);
   registerConnectionCommands(context, connectionService);
-  coreClient = new CoreClient(context);
-  queryService = new QueryService(coreClient);
-  schemaService = new SchemaService(coreClient, connectionService);
+  logService = new LogService();
+  coreClient = new CoreClient(context, logService);
+  queryService = new QueryService(coreClient, logService);
+  schemaService = new SchemaService(coreClient, connectionService, logService);
 
   try {
     await coreClient.start();
@@ -35,7 +38,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       vscode.window.showErrorMessage("Connection service is not available.");
       return;
     }
-    if (!queryService || !coreClient || !schemaService) {
+    if (!queryService || !coreClient || !schemaService || !logService) {
       vscode.window.showErrorMessage("Query infrastructure is not available.");
       return;
     }
@@ -44,6 +47,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       connectionService,
       queryService,
       schemaService,
+      logService,
       coreClient
     );
     panel.setStatus(coreReady ? "Ready for queries" : "Initializing Core Engine...");
@@ -104,7 +108,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.window.showErrorMessage("Connection service is not available.");
         return;
       }
-      if (!queryService || !coreClient || !schemaService) {
+      if (!queryService || !coreClient || !schemaService || !logService) {
         vscode.window.showErrorMessage("Query infrastructure is not available.");
         return;
       }
@@ -113,6 +117,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         connectionService,
         queryService,
         schemaService,
+        logService,
         coreClient
       );
       panel.setStatus("Received latest results.");
@@ -132,6 +137,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       queryService?.dispose();
       queryService = undefined;
       schemaService = undefined;
+      logService = undefined;
     }
   });
 }
@@ -143,4 +149,5 @@ export function deactivate(): void {
   queryService?.dispose();
   queryService = undefined;
   schemaService = undefined;
+  logService = undefined;
 }

@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { CoreClient } from "../coreClient";
+import { LogService } from "./logService";
 import {
   QueryStreamAssembler,
   type QueryStreamColumn,
@@ -53,7 +54,10 @@ export class QueryService implements vscode.Disposable {
   private readonly completedStates = new Map<string, QueryStreamState>();
   private readonly streamHighWaterMark = 5000;
 
-  constructor(private readonly coreClient: CoreClient) {
+  constructor(
+    private readonly coreClient: CoreClient,
+    private readonly logService?: LogService
+  ) {
     this.disposables.push(
       this.coreClient.onNotification("query.stream.start", (params) =>
         this.handleStreamNotification("query.stream.start", params)
@@ -89,6 +93,11 @@ export class QueryService implements vscode.Disposable {
     }
 
     this.emit({ type: "executionStarted", sql: params.sql });
+    this.logService?.append({
+      level: "info",
+      source: "extension",
+      message: `Executing query (${params.connection.driver})`
+    });
 
     const cancellationDisposable = cancellation.token.onCancellationRequested(() => {
       void this.coreClient.sendNotification("query.cancel", { sql: params.sql });
@@ -147,15 +156,30 @@ export class QueryService implements vscode.Disposable {
             executionTimeMs
           };
           this.emit({ type: "executionSucceeded", result: streamResult });
+          this.logService?.append({
+            level: "info",
+            source: "extension",
+            message: `Query succeeded (stream, ${state.rows.length} rows)`
+          });
           return streamResult;
         }
       }
 
       this.emit({ type: "executionSucceeded", result });
+      this.logService?.append({
+        level: "info",
+        source: "extension",
+        message: `Query succeeded (${result.rows.length} rows)`
+      });
       return result;
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
       this.emit({ type: "executionFailed", error: err });
+      this.logService?.append({
+        level: "error",
+        source: "extension",
+        message: `Query failed: ${err.message}`
+      });
       throw err;
     }
   }
@@ -235,6 +259,11 @@ export class QueryService implements vscode.Disposable {
     });
 
     this.emit({ type: "streamStarted", requestId, columns });
+    this.logService?.append({
+      level: "info",
+      source: "extension",
+      message: `Stream started (${columns.length} columns)`
+    });
   }
 
   private onStreamChunk(payload: Record<string, unknown>): void {
@@ -293,6 +322,12 @@ export class QueryService implements vscode.Disposable {
         ? (payload.statistics as Record<string, number>)
         : undefined
     });
+
+    this.logService?.append({
+      level: "info",
+      source: "extension",
+      message: "Stream completed."
+    });
   }
 
   private onStreamError(payload: Record<string, unknown>): void {
@@ -316,6 +351,12 @@ export class QueryService implements vscode.Disposable {
       const error = new Error(toStringOrUndefined(payload.message) ?? "Stream failed");
       this.emit({ type: "streamError", requestId, error });
     }
+
+    this.logService?.append({
+      level: "error",
+      source: "extension",
+      message: `Stream error: ${toStringOrUndefined(payload.message) ?? "unknown error"}`
+    });
   }
 }
 

@@ -281,10 +281,30 @@
   padding-right: var(--fg-spacing-xs);
 }
 
-.fg-log-entry {
-  display: grid;
-  grid-template-columns: auto 1fr;
+.fg-log-toolbar {
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--fg-spacing-xs);
+  align-items: center;
+  margin-bottom: var(--fg-spacing-xs);
+}
+
+.fg-log-toolbar vscode-text-field {
+  flex: 1 1 220px;
+}
+
+.fg-log-toolbar vscode-dropdown {
+  min-width: 140px;
+}
+
+.fg-log-toolbar vscode-button {
+  margin-left: auto;
+}
+
+.fg-log-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   padding: var(--fg-spacing-xs);
   border-radius: var(--fg-border-radius);
   background: var(--fg-background-soft);
@@ -303,8 +323,30 @@
   border-left: 3px solid var(--vscode-inputValidation-infoBorder, var(--fg-border-color));
 }
 
-.fg-log-entry__timestamp {
+.fg-log-entry__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--fg-spacing-sm);
   color: var(--fg-foreground-muted);
+  font-size: 0.75rem;
+}
+
+.fg-log-entry__timestamp {
+  font-variant-numeric: tabular-nums;
+}
+
+.fg-log-entry__level,
+.fg-log-entry__source {
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.fg-log-entry__level {
+  font-weight: 600;
+}
+
+.fg-log-entry__message {
+  line-height: 1.3;
 }
 
 .fg-schema-search {

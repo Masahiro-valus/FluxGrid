@@ -80,12 +80,16 @@ export const mockResult = {
 
 export const mockLogs = [
   {
+    id: "1",
     level: "info" as const,
+    source: "extension" as const,
     message: "Started query execution",
     timestamp: new Date().toISOString()
   },
   {
+    id: "2",
     level: "info" as const,
+    source: "core" as const,
     message: "Fetched 1,000 rows",
     timestamp: new Date().toISOString()
   }

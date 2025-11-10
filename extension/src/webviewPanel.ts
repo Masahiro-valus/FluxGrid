@@ -6,6 +6,8 @@ import { createConnectionMessageRouter } from "./webview/connectionMessageRouter
 import { createQueryMessageRouter } from "./webview/queryMessageRouter";
 import { SchemaService } from "./services/schemaService";
 import { createSchemaMessageRouter } from "./webview/schemaMessageRouter";
+import { LogService } from "./services/logService";
+import { createLogMessageRouter } from "./webview/logMessageRouter";
 import { randomBytes } from "crypto";
 
 export class ResultsPanel implements vscode.Disposable {
@@ -17,6 +19,7 @@ export class ResultsPanel implements vscode.Disposable {
     connectionService: ConnectionService,
     queryService: QueryService,
     schemaService: SchemaService,
+    logService: LogService,
     coreClient: CoreClient
   ): ResultsPanel {
     if (ResultsPanel.current) {
@@ -40,6 +43,7 @@ export class ResultsPanel implements vscode.Disposable {
       connectionService,
       queryService,
       schemaService,
+      logService,
       coreClient
     );
     return ResultsPanel.current;
@@ -51,6 +55,7 @@ export class ResultsPanel implements vscode.Disposable {
     private readonly connectionService: ConnectionService,
     private readonly queryService: QueryService,
     private readonly schemaService: SchemaService,
+    private readonly logService: LogService,
     private readonly coreClient: CoreClient
   ) {
     this.panel.webview.html = this.getHtml();
@@ -72,6 +77,7 @@ export class ResultsPanel implements vscode.Disposable {
       this.disposables
     );
     createSchemaMessageRouter(this.panel.webview, this.schemaService, this.disposables);
+    createLogMessageRouter(this.panel.webview, this.logService, this.disposables);
   }
 
   setStatus(message: string): void {

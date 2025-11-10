@@ -44,8 +44,10 @@ type QueryExecutionResult = {
   executionTimeMs: number;
 };
 
-type QueryLogEntry = {
+type DeveloperLogEntry = {
+  id: string;
   level: "info" | "warn" | "error";
+  source: "core" | "extension";
   message: string;
   timestamp: string;
 };
@@ -96,7 +98,9 @@ type QueryEditorInboundMessage =
       };
     }
   | { type: "query.stream.error"; payload: { requestId: string; message: string } }
-  | { type: "query.log.append"; payload: QueryLogEntry }
+  | { type: "log.entries"; payload: DeveloperLogEntry[] }
+  | { type: "log.entry"; payload: DeveloperLogEntry }
+  | { type: "log.cleared" }
   | { type: "schema.list.result"; payload: SchemaEntry[] }
   | { type: "schema.list.error"; error: string }
   | {
@@ -149,7 +153,7 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ vscodeApi = defaultBri
   const [timeoutSeconds, setTimeoutSeconds] = useState<number>(30);
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
   const [result, setResult] = useState<QueryExecutionResult | null>(null);
-  const [logs, setLogs] = useState<QueryLogEntry[]>([]);
+  const [logs, setLogs] = useState<DeveloperLogEntry[]>([]);
   const [status, setStatus] = useState<string>("");
   const [statusTone, setStatusTone] = useState<"info" | "error">("info");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -174,6 +178,8 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ vscodeApi = defaultBri
   const [formatEnabled, setFormatEnabled] = useState<boolean>(false);
   const [themeVersion, setThemeVersion] = useState(0);
   const [logFilter, setLogFilter] = useState<string>("");
+  const [logLevelFilter, setLogLevelFilter] = useState<"all" | "info" | "warn" | "error">("all");
+  const [logSourceFilter, setLogSourceFilter] = useState<"all" | "core" | "extension">("all");
   const [activeRequestId, setActiveRequestId] = useState<string | undefined>();
 
   useEffect(() => {
@@ -233,14 +239,6 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ vscodeApi = defaultBri
           setIsExecuting(true);
           setErrorMessage(null);
           setStatus(t("status.queryRunning"));
-          setLogs((prev) => [
-            ...prev.slice(-MAX_LOG_ENTRIES + 1),
-            {
-              level: "info",
-              message: `Running: ${message.payload.sql.slice(0, 120)}${message.payload.sql.length > 120 ? "…" : ""}`,
-              timestamp: new Date().toISOString()
-            }
-          ]);
           break;
         case "query.execution.succeeded":
           setIsExecuting(false);
@@ -253,14 +251,6 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ vscodeApi = defaultBri
           setErrorMessage(message.error);
           setStatus(t("status.queryFailed"));
           setStatusTone("error");
-          setLogs((prev) => [
-            ...prev.slice(-MAX_LOG_ENTRIES + 1),
-            {
-              level: "error",
-              message: message.error,
-              timestamp: new Date().toISOString()
-            }
-          ]);
           break;
         case "query.execution.cancelled":
           setIsExecuting(false);
@@ -294,14 +284,6 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ vscodeApi = defaultBri
               executionTimeMs: prev?.executionTimeMs ?? 0
             };
           });
-          setLogs((prev) => [
-            ...prev.slice(-MAX_LOG_ENTRIES + 1),
-            {
-              level: "info",
-              message: `Chunk ${message.payload.seq} (${message.payload.rows.length} rows)`,
-              timestamp: new Date().toISOString()
-            }
-          ]);
           setStatus(t("results.rowCount", { count: mergedCount }));
           setStatusTone("info");
           break;
@@ -340,17 +322,15 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ vscodeApi = defaultBri
           setErrorMessage(message.payload.message);
           setStatus(t("status.queryFailed"));
           setStatusTone("error");
-          setLogs((prev) => [
-            ...prev.slice(-MAX_LOG_ENTRIES + 1),
-            {
-              level: "error",
-              message: message.payload.message,
-              timestamp: new Date().toISOString()
-            }
-          ]);
           break;
-        case "query.log.append":
+        case "log.entries":
+          setLogs(message.payload.slice(-MAX_LOG_ENTRIES));
+          break;
+        case "log.entry":
           setLogs((prev) => [...prev.slice(-MAX_LOG_ENTRIES + 1), message.payload]);
+          break;
+        case "log.cleared":
+          setLogs([]);
           break;
         case "schema.list.result":
           setSchemaLoading(false);
@@ -390,10 +370,11 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ vscodeApi = defaultBri
     });
 
     return unsubscribe;
-  }, [vscodeApi, selectedConnectionId, t, activeRequestId, result, selectedTable]);
+  }, [vscodeApi, selectedConnectionId, t, activeRequestId, selectedTable]);
 
   useEffect(() => {
     vscodeApi.postMessage({ type: "connection.list" });
+    vscodeApi.postMessage({ type: "log.subscribe" });
   }, [vscodeApi]);
 
   useEffect(() => {
@@ -442,6 +423,25 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ vscodeApi = defaultBri
 
   const handleCancel = useCallback(() => {
     vscodeApi.postMessage({ type: "query.cancel" });
+  }, [vscodeApi]);
+
+  const handleLogLevelChange = useCallback(
+    (event: React.ChangeEvent<HTMLSelectElement>) => {
+      setLogLevelFilter(event.target.value as "all" | "info" | "warn" | "error");
+    },
+    []
+  );
+
+  const handleLogSourceChange = useCallback(
+    (event: React.ChangeEvent<HTMLSelectElement>) => {
+      setLogSourceFilter(event.target.value as "all" | "core" | "extension");
+    },
+    []
+  );
+
+  const handleClearLogs = useCallback(() => {
+    setLogFilter("");
+    vscodeApi.postMessage({ type: "log.clear" });
   }, [vscodeApi]);
 
   useEffect(() => {
@@ -516,15 +516,18 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ vscodeApi = defaultBri
   const rowCount = result?.rows?.length ?? 0;
 
   const filteredLogs = useMemo(() => {
-    if (!logFilter.trim()) {
-      return logs;
-    }
-    const keyword = logFilter.toLowerCase();
-    return logs.filter(
-      (entry) =>
-        entry.message.toLowerCase().includes(keyword) || entry.level.toLowerCase().includes(keyword)
-    );
-  }, [logs, logFilter]);
+    const keyword = logFilter.trim().toLowerCase();
+    return logs.filter((entry) => {
+      const matchesKeyword =
+        !keyword ||
+        entry.message.toLowerCase().includes(keyword) ||
+        entry.level.toLowerCase().includes(keyword) ||
+        entry.source.toLowerCase().includes(keyword);
+      const matchesLevel = logLevelFilter === "all" || entry.level === logLevelFilter;
+      const matchesSource = logSourceFilter === "all" || entry.source === logSourceFilter;
+      return matchesKeyword && matchesLevel && matchesSource;
+    });
+  }, [logs, logFilter, logLevelFilter, logSourceFilter]);
 
   const filteredSchemas = useMemo(() => {
     const keyword = schemaSearch.trim().toLowerCase();
@@ -964,26 +967,46 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ vscodeApi = defaultBri
           <div className="fg-pane__header">
             <h2 className="fg-pane__title">{t("logging.title")}</h2>
           </div>
-          <VSCodeTextField
-            placeholder={t("logs.filterPlaceholder")}
-            value={logFilter}
-            onInput={(event: React.ChangeEvent<HTMLInputElement>) =>
-              setLogFilter(event.target.value)
-            }
-            aria-label={t("logs.filterPlaceholder")}
-          />
+          <div className="fg-log-toolbar">
+            <VSCodeTextField
+              placeholder={t("logs.filterPlaceholder")}
+              value={logFilter}
+              onInput={(event: React.ChangeEvent<HTMLInputElement>) =>
+                setLogFilter(event.target.value)
+              }
+              aria-label={t("logs.filterPlaceholder")}
+            />
+            <VSCodeDropdown value={logLevelFilter} onChange={handleLogLevelChange}>
+              <VSCodeOption value="all">{t("logging.level.all")}</VSCodeOption>
+              <VSCodeOption value="error">{t("logging.level.error")}</VSCodeOption>
+              <VSCodeOption value="warn">{t("logging.level.warn")}</VSCodeOption>
+              <VSCodeOption value="info">{t("logging.level.info")}</VSCodeOption>
+            </VSCodeDropdown>
+            <VSCodeDropdown value={logSourceFilter} onChange={handleLogSourceChange}>
+              <VSCodeOption value="all">{t("logging.source.all")}</VSCodeOption>
+              <VSCodeOption value="core">{t("logging.source.core")}</VSCodeOption>
+              <VSCodeOption value="extension">{t("logging.source.extension")}</VSCodeOption>
+            </VSCodeDropdown>
+            <VSCodeButton appearance="secondary" onClick={handleClearLogs}>
+              {t("logging.clear")}
+            </VSCodeButton>
+          </div>
           <div className="fg-log-list">
             {filteredLogs.length === 0 && <span>{t("logging.empty")}</span>}
-            {filteredLogs.map((entry, index) => (
-              <article
-                key={`${entry.timestamp}-${index}`}
-                className="fg-log-entry"
-                data-level={entry.level}
-              >
-                <span className="fg-log-entry__timestamp">
-                  {new Date(entry.timestamp).toLocaleTimeString()}
-                </span>
-                <span>{entry.message}</span>
+            {filteredLogs.map((entry) => (
+              <article key={entry.id} className="fg-log-entry" data-level={entry.level}>
+                <div className="fg-log-entry__meta">
+                  <span className="fg-log-entry__timestamp">
+                    {new Date(entry.timestamp).toLocaleTimeString()}
+                  </span>
+                  <span className="fg-log-entry__level">
+                    {t(`logging.level.${entry.level}`)}
+                  </span>
+                  <span className="fg-log-entry__source">
+                    {t(`logging.source.${entry.source}`)}
+                  </span>
+                </div>
+                <span className="fg-log-entry__message">{entry.message}</span>
               </article>
             ))}
           </div>

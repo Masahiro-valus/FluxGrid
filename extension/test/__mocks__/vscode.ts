@@ -42,3 +42,26 @@ export const Uri = {
   joinPath: vi.fn((...segments: unknown[]) => segments.join("/"))
 };
 
+export class EventEmitter<T> {
+  private listeners: Array<(event: T) => void> = [];
+
+  event = (listener: (event: T) => void): { dispose: () => void } => {
+    this.listeners.push(listener);
+    return {
+      dispose: () => {
+        this.listeners = this.listeners.filter((existing) => existing !== listener);
+      }
+    };
+  };
+
+  fire(data: T): void {
+    for (const listener of [...this.listeners]) {
+      listener(data);
+    }
+  }
+
+  dispose(): void {
+    this.listeners = [];
+  }
+}
+

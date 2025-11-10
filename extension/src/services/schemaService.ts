@@ -3,6 +3,7 @@ import { CoreClient } from "../coreClient";
 import type { ConnectionService } from "./connectionService";
 import type { HydratedConnection } from "../storage/connectionStore";
 import { buildDsnFromConnection } from "../utils/dsn";
+import { LogService } from "./logService";
 
 export interface SchemaNode {
   name: string;
@@ -30,7 +31,8 @@ interface SchemaListResponse {
 export class SchemaService {
   constructor(
     private readonly coreClient: CoreClient,
-    private readonly connectionService: ConnectionService
+    private readonly connectionService: ConnectionService,
+    private readonly logService?: LogService
   ) {}
 
   async list(options: SchemaListOptions = {}): Promise<SchemaNode[]> {
@@ -47,8 +49,26 @@ export class SchemaService {
       }
     };
 
-    const response = await this.coreClient.sendRequest<SchemaListResponse>("schema.list", payload);
-    return response.schemas ?? [];
+    try {
+      const response = await this.coreClient.sendRequest<SchemaListResponse>(
+        "schema.list",
+        payload
+      );
+      this.logService?.append({
+        level: "info",
+        source: "extension",
+        message: "Schema list retrieved."
+      });
+      return response.schemas ?? [];
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      this.logService?.append({
+        level: "error",
+        source: "extension",
+        message: `Schema list failed: ${err.message}`
+      });
+      throw err;
+    }
   }
 
   private async resolveConnection(connectionId?: string): Promise<{ driver: string; dsn: string }> {
@@ -85,21 +105,36 @@ export class SchemaService {
 
     const connection = await this.resolveConnection(target.connectionId);
 
-    const response = await this.coreClient.sendRequest<{ ddl?: string }>("ddl.get", {
-      connection,
-      target: {
-        schema: target.schema,
-        name: target.name
-      },
-      options: {
-        timeoutSeconds: 15
+    try {
+      const response = await this.coreClient.sendRequest<{ ddl?: string }>("ddl.get", {
+        connection,
+        target: {
+          schema: target.schema,
+          name: target.name
+        },
+        options: {
+          timeoutSeconds: 15
+        }
+      });
+
+      if (!response.ddl) {
+        throw new Error("DDL not available.");
       }
-    });
 
-    if (!response.ddl) {
-      throw new Error("DDL not available.");
+      this.logService?.append({
+        level: "info",
+        source: "extension",
+        message: `Fetched DDL for ${target.schema}.${target.name}`
+      });
+      return response.ddl;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      this.logService?.append({
+        level: "error",
+        source: "extension",
+        message: `Failed to load DDL for ${target.schema}.${target.name}: ${err.message}`
+      });
+      throw err;
     }
-
-    return response.ddl;
   }
 }

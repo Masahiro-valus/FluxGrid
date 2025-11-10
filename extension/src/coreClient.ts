@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import * as cp from "child_process";
 import * as path from "path";
+import { LogService, type LogLevel } from "./services/logService";
 
 interface JsonRpcError {
   code: number;
@@ -41,7 +42,10 @@ export class CoreClient implements vscode.Disposable {
   private nextRequestId = 1;
   private readonly notificationListeners = new Map<string, Set<(params: unknown) => void>>();
 
-  constructor(private readonly context: vscode.ExtensionContext) {}
+  constructor(
+    private readonly context: vscode.ExtensionContext,
+    private readonly logService?: LogService
+  ) {}
 
   async start(): Promise<void> {
     if (this.process) {
@@ -72,9 +76,7 @@ export class CoreClient implements vscode.Disposable {
       });
 
       this.process.stderr.on("data", (chunk: Buffer) => {
-        const message = chunk.toString("utf8");
-        console.error(`[FluxGrid Core stderr] ${message}`);
-        vscode.window.showWarningMessage(`Core Engine: ${message}`);
+        this.handleCoreLog(chunk.toString("utf8"));
       });
 
       this.process.on("error", (err) => {
@@ -250,5 +252,48 @@ export class CoreClient implements vscode.Disposable {
     const bundled = path.join(this.context.extensionPath, "..", "core", "bin", binaryName);
 
     return bundled;
+  }
+
+  private handleCoreLog(raw: string): void {
+    const lines = raw
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    for (const line of lines) {
+      let level: LogLevel = "info";
+      let message = line;
+
+      try {
+        const parsed = JSON.parse(line) as Record<string, unknown>;
+        if (typeof parsed.level === "string") {
+          const candidate = parsed.level.toLowerCase();
+          if (candidate === "warn" || candidate === "warning") {
+            level = "warn";
+          } else if (candidate === "error" || candidate === "fatal" || candidate === "panic") {
+            level = "error";
+          } else {
+            level = "info";
+          }
+        }
+        if (typeof parsed.message === "string") {
+          message = parsed.message;
+        } else if (typeof parsed.msg === "string") {
+          message = parsed.msg;
+        }
+      } catch {
+        // leave defaults
+      }
+
+      console.error(`[FluxGrid Core] ${message}`);
+      this.logService?.append({
+        level,
+        source: "core",
+        message
+      });
+
+      if (level === "error") {
+        vscode.window.showWarningMessage(`Core Engine: ${message}`);
+      }
+    }
   }
 }

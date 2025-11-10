@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CancellationTokenSource } from "vscode";
 import { QueryService } from "../src/services/queryService";
+import type { LogService } from "../src/services/logService";
 
 describe("QueryService", () => {
   const createCoreClient = () => ({
@@ -12,10 +13,16 @@ describe("QueryService", () => {
 
   let service: QueryService;
   let coreClient: ReturnType<typeof createCoreClient>;
+  let logService: LogService;
+  let appendMock: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     coreClient = createCoreClient();
-    service = new QueryService(coreClient as any);
+    appendMock = vi.fn();
+    logService = {
+      append: appendMock
+    } as unknown as LogService;
+    service = new QueryService(coreClient as any, logService);
   });
 
   it("executes query using core client", async () => {
@@ -51,6 +58,16 @@ describe("QueryService", () => {
       tokenSource.token
     );
     expect(result.rows[0][0]).toBe(1);
+    expect(appendMock).toHaveBeenCalledWith(
+      expect.objectContaining({ level: "info", source: "extension" })
+    );
+    expect(appendMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        level: "info",
+        source: "extension",
+        message: expect.stringContaining("Query succeeded")
+      })
+    );
   });
 
   it("registers cancellation callback", async () => {
@@ -107,6 +124,12 @@ describe("QueryService", () => {
         tokenSource
       )
     ).rejects.toThrow("boom");
+    expect(appendMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        level: "error",
+        message: expect.stringContaining("Query failed")
+      })
+    );
   });
 
   it("disposes listeners when service disposed", () => {
