@@ -56,7 +56,8 @@ func (m *streamManager) handleAck(_ context.Context, raw json.RawMessage) {
 	}
 
 	if err := json.Unmarshal(raw, &payload); err != nil {
-		logging.Logger().Warn().Err(err).Msg("query.stream.ack: invalid payload")
+		logger := logging.Logger()
+		logger.Warn().Err(err).Msg("query.stream.ack: invalid payload")
 		return
 	}
 
@@ -86,7 +87,8 @@ func (m *streamManager) handleCancel(_ context.Context, raw json.RawMessage) {
 	}
 
 	if err := json.Unmarshal(raw, &payload); err != nil {
-		logging.Logger().Warn().Err(err).Msg("query.stream.cancel: invalid payload")
+		logger := logging.Logger()
+		logger.Warn().Err(err).Msg("query.stream.cancel: invalid payload")
 		return
 	}
 
@@ -557,7 +559,8 @@ func notifyStreamError(server *rpc.Server, requestID, code, message string, fata
 		"fatal":     fatal,
 	}
 	if err := server.Notify("query.stream.error", payload); err != nil {
-		logging.Logger().Error().Err(err).Str("request_id", requestID).Msg("failed to send stream error notification")
+		logger := logging.Logger()
+		logger.Error().Err(err).Str("request_id", requestID).Msg("failed to send stream error notification")
 	}
 }
 
