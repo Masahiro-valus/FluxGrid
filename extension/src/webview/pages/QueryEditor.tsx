@@ -22,7 +22,15 @@ import "./QueryEditor.css";
 import { useI18n } from "../i18n";
 import { ConnectionDialog, type ConnectionFormValue } from "../components/ConnectionDialog";
 import { createVscodeBridge, type VscodeBridge } from "../utils/vscode";
-import { mockConnections, mockLogs, mockResult, mockSchema } from "../mock/queryEditorMocks";
+import {
+  mockConnections,
+  mockLogs,
+  mockResult,
+  mockSchema,
+  mockDdl
+} from "../mock/queryEditorMocks";
+
+const makeTableId = (schema: string, table: string) => `${schema}.${table}`;
 
 type ConnectionSummary = {
   id: string;
@@ -42,9 +50,21 @@ type QueryLogEntry = {
   timestamp: string;
 };
 
-type SchemaNode = {
-  label: string;
-  children?: SchemaNode[];
+type SchemaColumn = {
+  name: string;
+  dataType: string;
+  notNull: boolean;
+};
+
+type SchemaTable = {
+  name: string;
+  type: string;
+  columns: SchemaColumn[];
+};
+
+type SchemaEntry = {
+  name: string;
+  tables: SchemaTable[];
 };
 
 type QueryEditorInboundMessage =
@@ -77,8 +97,13 @@ type QueryEditorInboundMessage =
     }
   | { type: "query.stream.error"; payload: { requestId: string; message: string } }
   | { type: "query.log.append"; payload: QueryLogEntry }
-  | { type: "schema.list.result"; payload: SchemaNode[] }
-  | { type: "schema.list.error"; error: string };
+  | { type: "schema.list.result"; payload: SchemaEntry[] }
+  | { type: "schema.list.error"; error: string }
+  | {
+      type: "schema.ddl.result";
+      payload: { schema: string; name: string; ddl: string };
+    }
+  | { type: "schema.ddl.error"; error: string };
 
 interface QueryEditorProps {
   vscodeApi?: VscodeBridge;
@@ -128,8 +153,18 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ vscodeApi = defaultBri
   const [status, setStatus] = useState<string>("");
   const [statusTone, setStatusTone] = useState<"info" | "error">("info");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [schema, setSchema] = useState<SchemaNode[]>([]);
-  const [schemaFilter, setSchemaFilter] = useState<string>("");
+  const [schemas, setSchemas] = useState<SchemaEntry[]>([]);
+  const [schemaSearch, setSchemaSearch] = useState<string>("");
+  const [schemaLoading, setSchemaLoading] = useState(false);
+  const [expandedSchemas, setExpandedSchemas] = useState<Set<string>>(new Set());
+  const [expandedTables, setExpandedTables] = useState<Set<string>>(new Set());
+  const [selectedTable, setSelectedTable] = useState<{
+    schema: string;
+    table: SchemaTable;
+  } | null>(null);
+  const [ddl, setDdl] = useState<string>("");
+  const [ddlLoading, setDdlLoading] = useState(false);
+  const [ddlError, setDdlError] = useState<string | null>(null);
   const [showConnectionDialog, setShowConnectionDialog] = useState(false);
   const [dialogInitialValue, setDialogInitialValue] = useState<ConnectionFormValue | undefined>();
   const [dialogTestState, setDialogTestState] = useState<"idle" | "pending" | "success" | "error">(
@@ -318,7 +353,8 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ vscodeApi = defaultBri
           setLogs((prev) => [...prev.slice(-MAX_LOG_ENTRIES + 1), message.payload]);
           break;
         case "schema.list.result":
-          setSchema(message.payload);
+          setSchemaLoading(false);
+          setSchemas(message.payload);
           setStatus(
             message.payload.length
               ? t("schema.title")
@@ -327,9 +363,26 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ vscodeApi = defaultBri
           setStatusTone("info");
           break;
         case "schema.list.error":
-          setSchema([]);
+          setSchemaLoading(false);
+          setSchemas([]);
           setStatus(message.error);
           setStatusTone("error");
+          break;
+        case "schema.ddl.result":
+          if (
+            selectedTable &&
+            selectedTable.schema === message.payload.schema &&
+            selectedTable.table.name === message.payload.name
+          ) {
+            setDdl(message.payload.ddl);
+            setDdlError(null);
+            setDdlLoading(false);
+          }
+          break;
+        case "schema.ddl.error":
+          setDdl("");
+          setDdlLoading(false);
+          setDdlError(message.error);
           break;
         default:
           break;
@@ -337,7 +390,7 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ vscodeApi = defaultBri
     });
 
     return unsubscribe;
-  }, [vscodeApi, selectedConnectionId, t, activeRequestId, result]);
+  }, [vscodeApi, selectedConnectionId, t, activeRequestId, result, selectedTable]);
 
   useEffect(() => {
     vscodeApi.postMessage({ type: "connection.list" });
@@ -348,7 +401,23 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ vscodeApi = defaultBri
       setConnections(mockConnections);
       setSelectedConnectionId(mockConnections[0]?.id);
       setResult(mockResult);
-      setSchema(mockSchema);
+      setSchemas(mockSchema);
+      setSchemaLoading(false);
+      setExpandedSchemas(new Set(mockSchema.map((entry) => entry.name)));
+      setExpandedTables(
+        new Set(
+          mockSchema.flatMap((entry) =>
+            entry.tables.map((table) => makeTableId(entry.name, table.name))
+          )
+        )
+      );
+      const firstSchema = mockSchema[0];
+      const firstTable = firstSchema?.tables[0];
+      if (firstSchema && firstTable) {
+        setSelectedTable({ schema: firstSchema.name, table: firstTable });
+        setDdl(mockDdl);
+      }
+      setDdlLoading(false);
       setLogs(mockLogs);
       setStatus("Loaded mock data.");
     }
@@ -393,16 +462,25 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ vscodeApi = defaultBri
   }, [handleRun, handleCancel, isExecuting]);
 
   useEffect(() => {
+    if (typeof acquireVsCodeApi !== "function") {
+      return;
+    }
+    setSchemaLoading(true);
     const connectionId = selectedConnectionId ?? undefined;
-    vscodeApi.postMessage({
-      type: "schema.list",
-      payload: { connectionId }
-    });
-  }, [selectedConnectionId, vscodeApi]);
+    const handle = window.setTimeout(() => {
+      vscodeApi.postMessage({
+        type: "schema.list",
+        payload: {
+          connectionId,
+          search: schemaSearch.trim() ? schemaSearch.trim() : undefined
+        }
+      });
+    }, 200);
 
-  useEffect(() => {
-    vscodeApi.postMessage({ type: "schema.list" });
-  }, [vscodeApi]);
+    return () => {
+      window.clearTimeout(handle);
+    };
+  }, [selectedConnectionId, schemaSearch, vscodeApi]);
 
   const columns: GridColumn[] = useMemo(() => {
     if (!result?.columns) {
@@ -448,26 +526,183 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ vscodeApi = defaultBri
     );
   }, [logs, logFilter]);
 
-  const filteredSchema = useMemo(() => {
-    if (!schemaFilter.trim()) {
-      return schema;
+  const filteredSchemas = useMemo(() => {
+    const keyword = schemaSearch.trim().toLowerCase();
+    if (!keyword) {
+      return schemas;
     }
-    const keyword = schemaFilter.toLowerCase();
-    const filterNodes = (nodes: SchemaNode[]): SchemaNode[] =>
-      nodes
-        .map((node) => {
-          if (!node.children) {
-            return node.label.toLowerCase().includes(keyword) ? node : null;
+    return schemas
+      .map((entry) => {
+        const schemaMatch = entry.name.toLowerCase().includes(keyword);
+        const tables = entry.tables
+          .map((table) => {
+            const tableMatch = table.name.toLowerCase().includes(keyword);
+            const columns = table.columns.filter((column) => {
+              const columnName = column.name.toLowerCase();
+              return (
+                columnName.includes(keyword) ||
+                column.dataType.toLowerCase().includes(keyword)
+              );
+            });
+            if (tableMatch) {
+              return table;
+            }
+            if (columns.length > 0) {
+              return {
+                ...table,
+                columns
+              };
+            }
+            return null;
+          })
+          .filter((table): table is SchemaTable => table !== null);
+
+        if (schemaMatch) {
+          return entry;
+        }
+        if (tables.length > 0) {
+          return {
+            name: entry.name,
+            tables
+          };
+        }
+        return null;
+      })
+      .filter((entry): entry is SchemaEntry => entry !== null);
+  }, [schemas, schemaSearch]);
+
+  const selectedTableId = useMemo(() => {
+    if (!selectedTable) {
+      return null;
+    }
+    return makeTableId(selectedTable.schema, selectedTable.table.name);
+  }, [selectedTable]);
+
+  const toggleSchema = useCallback((schemaName: string) => {
+    setExpandedSchemas((prev) => {
+      const next = new Set(prev);
+      if (next.has(schemaName)) {
+        next.delete(schemaName);
+      } else {
+        next.add(schemaName);
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleTable = useCallback((schemaName: string, tableName: string) => {
+    const id = makeTableId(schemaName, tableName);
+    setExpandedTables((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleSelectTable = useCallback(
+    (schemaName: string, table: SchemaTable) => {
+      setExpandedSchemas((prev) => new Set(prev).add(schemaName));
+      setExpandedTables((prev) => new Set(prev).add(makeTableId(schemaName, table.name)));
+      setSelectedTable({ schema: schemaName, table });
+      setDdl("");
+      setDdlError(null);
+      setDdlLoading(true);
+
+      if (typeof acquireVsCodeApi !== "function") {
+        setDdl(mockDdl);
+        setDdlLoading(false);
+        return;
+      }
+
+      vscodeApi.postMessage({
+        type: "schema.ddl.get",
+        payload: {
+          connectionId: selectedConnectionId,
+          schema: schemaName,
+          name: table.name
+        }
+      });
+    },
+    [selectedConnectionId, vscodeApi]
+  );
+
+  const handleInsertQuery = useCallback(
+    (schemaName: string, table: SchemaTable) => {
+      setSql((current) =>
+        `${current}\nSELECT * FROM ${schemaName}.${table.name} LIMIT 100;`.trimStart()
+      );
+      setStatus(t("schema.queryPrepared", { table: `${schemaName}.${table.name}` }));
+      setStatusTone("info");
+    },
+    [setSql, setStatus, setStatusTone, t]
+  );
+
+  useEffect(() => {
+    setExpandedSchemas((prev) => {
+      const next = new Set<string>();
+      schemas.forEach((entry) => {
+        if (prev.has(entry.name)) {
+          next.add(entry.name);
+        }
+      });
+      return next;
+    });
+    setExpandedTables((prev) => {
+      const next = new Set<string>();
+      schemas.forEach((entry) => {
+        entry.tables.forEach((table) => {
+          const id = makeTableId(entry.name, table.name);
+          if (prev.has(id)) {
+            next.add(id);
           }
-          const children = filterNodes(node.children);
-          if (children.length > 0 || node.label.toLowerCase().includes(keyword)) {
-            return { ...node, children };
+        });
+      });
+      return next;
+    });
+
+    if (selectedTable) {
+      const stillExists = schemas.some(
+        (entry) =>
+          entry.name === selectedTable.schema &&
+          entry.tables.some((table) => table.name === selectedTable.table.name)
+      );
+      if (!stillExists) {
+        setSelectedTable(null);
+        setDdl("");
+        setDdlError(null);
+      }
+    }
+  }, [schemas, selectedTable]);
+
+  useEffect(() => {
+    if (!schemaSearch.trim()) {
+      return;
+    }
+    const keyword = schemaSearch.trim().toLowerCase();
+    setExpandedSchemas((prev) => {
+      const next = new Set(prev);
+      filteredSchemas.forEach((entry) => next.add(entry.name));
+      return next;
+    });
+    setExpandedTables((prev) => {
+      const next = new Set(prev);
+      filteredSchemas.forEach((entry) => {
+        entry.tables.forEach((table) => {
+          if (
+            table.name.toLowerCase().includes(keyword) ||
+            table.columns.some((column) => column.name.toLowerCase().includes(keyword))
+          ) {
+            next.add(makeTableId(entry.name, table.name));
           }
-          return null;
-        })
-        .filter(Boolean) as SchemaNode[];
-    return filterNodes(schema);
-  }, [schema, schemaFilter]);
+        });
+      });
+      return next;
+    });
+  }, [schemaSearch, filteredSchemas]);
 
   const handleSchemaItemClick = (label: string) => {
     setSql((current) => `${current}\nSELECT * FROM ${label} LIMIT 100;`.trimStart());
@@ -582,26 +817,94 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ vscodeApi = defaultBri
       {errorMessage && <div className="fg-error-banner">{errorMessage}</div>}
 
       <div className="fg-layout">
-        <section className="fg-pane" aria-label={t("schema.title")}>
+        <section className="fg-pane fg-schema-pane" aria-label={t("schema.title")}>
           <div className="fg-pane__header">
             <h2 className="fg-pane__title">{t("schema.title")}</h2>
           </div>
           <VSCodeTextField
             className="fg-schema-search"
             placeholder={t("schema.searchPlaceholder")}
-            value={schemaFilter}
+            value={schemaSearch}
             onInput={(event: React.ChangeEvent<HTMLInputElement>) =>
-              setSchemaFilter(event.target.value)
+              setSchemaSearch(event.target.value)
             }
             aria-label={t("schema.searchPlaceholder")}
           />
-          <div className="fg-schema-tree" role="tree">
-            <VSCodeTree>
-              {filteredSchema.length === 0 && <span>{t("schema.empty")}</span>}
-              {filteredSchema.map((node) => (
-                <SchemaTreeItem key={node.label} node={node} onSelect={handleSchemaItemClick} />
-              ))}
-            </VSCodeTree>
+          <div className="fg-schema-content">
+            <div className="fg-schema-tree" role="tree">
+              {schemaLoading && (
+                <div className="fg-schema-loading">
+                  <VSCodeProgressRing />
+                </div>
+              )}
+              <SchemaTree
+                schemas={filteredSchemas}
+                expandedSchemas={expandedSchemas}
+                expandedTables={expandedTables}
+                selectedTableId={selectedTableId}
+                onToggleSchema={toggleSchema}
+                onToggleTable={toggleTable}
+                onSelectTable={handleSelectTable}
+                onInsertQuery={handleInsertQuery}
+                emptyMessage={t("schema.empty")}
+              />
+            </div>
+            <div className="fg-schema-detail">
+              {selectedTable ? (
+                <>
+                  <header className="fg-schema-detail-header">
+                    <h3>
+                      {selectedTable.schema}.{selectedTable.table.name}
+                    </h3>
+                    <span className="fg-schema-detail-type">
+                      {t("schema.detailType", { type: selectedTable.table.type })}
+                    </span>
+                  </header>
+                  <div className="fg-schema-columns">
+                    <h4>{t("schema.detailColumns")}</h4>
+                    {selectedTable.table.columns.length === 0 ? (
+                      <p>{t("schema.detailNoColumns")}</p>
+                    ) : (
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>{t("schema.columnName")}</th>
+                            <th>{t("schema.columnType")}</th>
+                            <th>{t("schema.columnNullable")}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedTable.table.columns.map((column) => (
+                            <tr key={`${selectedTable.schema}.${selectedTable.table.name}.${column.name}`}>
+                              <td>{column.name}</td>
+                              <td>{column.dataType}</td>
+                              <td>{column.notNull ? t("schema.columnNotNull") : t("schema.columnNullableYes")}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                  <div className="fg-schema-ddl">
+                    <h4>{t("schema.detailDDL")}</h4>
+                    {ddlLoading ? (
+                      <div className="fg-schema-ddl-loading">
+                        <VSCodeProgressRing />
+                        <span>{t("schema.ddlLoading")}</span>
+                      </div>
+                    ) : ddlError ? (
+                      <div className="fg-schema-ddl-error">{ddlError}</div>
+                    ) : ddl ? (
+                      <pre>{ddl}</pre>
+                    ) : (
+                      <span>{t("schema.ddlLoading")}</span>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <p className="fg-schema-detail-placeholder">{t("schema.detailNone")}</p>
+              )}
+            </div>
           </div>
         </section>
 
@@ -700,30 +1003,115 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ vscodeApi = defaultBri
   );
 };
 
-interface SchemaTreeItemProps {
-  node: SchemaNode;
-  onSelect: (label: string) => void;
+interface SchemaTreeProps {
+  schemas: SchemaEntry[];
+  expandedSchemas: Set<string>;
+  expandedTables: Set<string>;
+  selectedTableId: string | null;
+  onToggleSchema: (schema: string) => void;
+  onToggleTable: (schema: string, table: string) => void;
+  onSelectTable: (schema: string, table: SchemaTable) => void;
+  onInsertQuery: (schema: string, table: SchemaTable) => void;
+  emptyMessage: string;
 }
 
-const SchemaTreeItem: React.FC<SchemaTreeItemProps> = ({ node, onSelect }) => {
-  if (!node.children || node.children.length === 0) {
+const SchemaTree: React.FC<SchemaTreeProps> = ({
+  schemas,
+  expandedSchemas,
+  expandedTables,
+  selectedTableId,
+  onToggleSchema,
+  onToggleTable,
+  onSelectTable,
+  onInsertQuery,
+  emptyMessage
+}) => {
+  if (!schemas.length) {
     return (
-      <VSCodeTreeItem
-        id={node.label}
-        onClick={() => onSelect(node.label)}
-        data-name={node.label}
-        aria-label={node.label}
-      >
-        {node.label}
-      </VSCodeTreeItem>
+      <VSCodeTree>
+        <span>{emptyMessage}</span>
+      </VSCodeTree>
     );
   }
+
   return (
-    <VSCodeTreeItem id={node.label} aria-label={node.label}>
-      {node.label}
-      {node.children.map((child) => (
-        <SchemaTreeItem key={`${node.label}/${child.label}`} node={child} onSelect={onSelect} />
-      ))}
-    </VSCodeTreeItem>
+    <VSCodeTree>
+      {schemas.map((schema) => {
+        const schemaId = `schema:${schema.name}`;
+        const schemaExpanded = expandedSchemas.has(schema.name);
+        return (
+          <VSCodeTreeItem
+            key={schemaId}
+            id={schemaId}
+            expanded={schemaExpanded}
+            onClick={() => onToggleSchema(schema.name)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onToggleSchema(schema.name);
+              }
+            }}
+            aria-label={schema.name}
+            tabIndex={0}
+          >
+            {schema.name}
+            {schema.tables.map((table) => {
+              const tableId = makeTableId(schema.name, table.name);
+              const tableExpanded = expandedTables.has(tableId);
+              const selected = selectedTableId === tableId;
+              return (
+                <VSCodeTreeItem
+                  key={tableId}
+                  id={`table:${tableId}`}
+                  expanded={tableExpanded}
+                  selected={selected}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (!tableExpanded) {
+                      onToggleTable(schema.name, table.name);
+                    }
+                    onSelectTable(schema.name, table);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      onSelectTable(schema.name, table);
+                    } else if (event.key === " ") {
+                      event.preventDefault();
+                      onToggleTable(schema.name, table.name);
+                    }
+                  }}
+                  aria-label={`${table.name} (${table.type})`}
+                  tabIndex={0}
+                >
+                  {table.name}
+                  {table.columns.map((column) => (
+                    <VSCodeTreeItem
+                      key={`${tableId}.${column.name}`}
+                      id={`column:${tableId}.${column.name}`}
+                      aria-label={`${column.name} ${column.dataType}`}
+                      tabIndex={0}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onInsertQuery(schema.name, table);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          onInsertQuery(schema.name, table);
+                        }
+                      }}
+                    >
+                      {column.name}
+                      <span className="fg-column-type">{column.dataType}</span>
+                    </VSCodeTreeItem>
+                  ))}
+                </VSCodeTreeItem>
+              );
+            })}
+          </VSCodeTreeItem>
+        );
+      })}
+    </VSCodeTree>
   );
 };

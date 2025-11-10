@@ -21,14 +21,48 @@ export const mockConnections = [
 
 export const mockSchema = [
   {
-    label: "public",
-    children: [{ label: "customers" }, { label: "orders" }, { label: "payments" }]
+    name: "public",
+    tables: [
+      {
+        name: "customers",
+        type: "table",
+        columns: [
+          { name: "id", dataType: "integer", notNull: true },
+          { name: "name", dataType: "text", notNull: false },
+          { name: "email", dataType: "text", notNull: false }
+        ]
+      },
+      {
+        name: "orders",
+        type: "table",
+        columns: [
+          { name: "id", dataType: "integer", notNull: true },
+          { name: "customer_id", dataType: "integer", notNull: true },
+          { name: "total", dataType: "numeric", notNull: true }
+        ]
+      }
+    ]
   },
   {
-    label: "analytics",
-    children: [{ label: "daily_revenue" }, { label: "monthly_summary" }]
+    name: "analytics",
+    tables: [
+      {
+        name: "daily_revenue",
+        type: "view",
+        columns: [
+          { name: "day", dataType: "date", notNull: true },
+          { name: "revenue", dataType: "numeric", notNull: true }
+        ]
+      }
+    ]
   }
 ];
+
+export const mockDdl = `CREATE TABLE public.customers (
+  id integer PRIMARY KEY,
+  name text,
+  email text
+);`;
 
 export const mockResult = {
   columns: [

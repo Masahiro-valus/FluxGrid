@@ -27,15 +27,14 @@ describe("createSchemaMessageRouter", () => {
   beforeEach(() => {
     webview = fakeWebview();
     schemaService = {
-      list: vi.fn()
+      list: vi.fn(),
+      getDDL: vi.fn()
     } as unknown as vi.Mocked<SchemaService>;
     disposables = [];
   });
 
   it("responds with schema list result", async () => {
-    schemaService.list.mockResolvedValue([
-      { name: "public", tables: [] }
-    ]);
+    schemaService.list.mockResolvedValue([{ name: "public", tables: [] }]);
 
     createSchemaMessageRouter(webview as unknown as vscode.Webview, schemaService, disposables);
 
@@ -48,6 +47,27 @@ describe("createSchemaMessageRouter", () => {
     expect(webview.postMessage).toHaveBeenCalledWith({
       type: "schema.list.result",
       payload: [{ name: "public", tables: [] }]
+    });
+  });
+
+  it("returns table DDL", async () => {
+    schemaService.getDDL.mockResolvedValue("CREATE TABLE foo");
+
+    createSchemaMessageRouter(webview as unknown as vscode.Webview, schemaService, disposables);
+
+    await webview.emit({
+      type: "schema.ddl.get",
+      payload: { schema: "public", name: "orders" }
+    });
+
+    expect(schemaService.getDDL).toHaveBeenCalledWith({ schema: "public", name: "orders" });
+    expect(webview.postMessage).toHaveBeenCalledWith({
+      type: "schema.ddl.result",
+      payload: {
+        schema: "public",
+        name: "orders",
+        ddl: "CREATE TABLE foo"
+      }
     });
   });
 

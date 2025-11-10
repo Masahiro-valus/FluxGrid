@@ -68,5 +68,32 @@ describe("SchemaService", () => {
       process.env.FLUXGRID_DSN = originalDsn;
     }
   });
+
+  it("retrieves DDL for a table", async () => {
+    const connection = {
+      id: "1",
+      name: "Local",
+      driver: "postgres",
+      host: "localhost",
+      port: 5432,
+      database: "postgres",
+      username: "postgres",
+      password: "pw",
+      options: { ssl: false }
+    } as HydratedConnection & { password?: string };
+
+    connectionService.getConnection.mockResolvedValue(connection);
+    coreClient.sendRequest.mockResolvedValue({ ddl: "CREATE TABLE ..." });
+
+    const ddl = await service.getDDL({ schema: "public", name: "customers", connectionId: "1" });
+
+    expect(coreClient.sendRequest).toHaveBeenCalledWith(
+      "ddl.get",
+      expect.objectContaining({
+        target: { schema: "public", name: "customers" }
+      })
+    );
+    expect(ddl).toBe("CREATE TABLE ...");
+  });
 });
 

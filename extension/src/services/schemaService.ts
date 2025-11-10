@@ -77,4 +77,29 @@ export class SchemaService {
       dsn: fallbackDsn
     };
   }
+
+  async getDDL(target: { schema: string; name: string; connectionId?: string }): Promise<string> {
+    if (!target.schema || !target.name) {
+      throw new Error("schema and name are required");
+    }
+
+    const connection = await this.resolveConnection(target.connectionId);
+
+    const response = await this.coreClient.sendRequest<{ ddl?: string }>("ddl.get", {
+      connection,
+      target: {
+        schema: target.schema,
+        name: target.name
+      },
+      options: {
+        timeoutSeconds: 15
+      }
+    });
+
+    if (!response.ddl) {
+      throw new Error("DDL not available.");
+    }
+
+    return response.ddl;
+  }
 }
