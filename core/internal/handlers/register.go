@@ -115,6 +115,8 @@ func Register(server *rpc.Server) {
 	server.Register("core.ping", pingHandler)
 	server.Register("query.execute", executeHandler(server, streams))
 	server.Register("connect.test", connectTestHandler(defaultConnectionTester))
+	server.Register("schema.list", schemaListHandler(defaultSchemaService, pgxConnectionFactory))
+	server.Register("ddl.get", ddlGetHandler(defaultSchemaService, pgxConnectionFactory))
 	server.RegisterNotification("query.cancel", cancelHandler(server))
 	server.RegisterNotification("query.stream.ack", streams.handleAck)
 	server.RegisterNotification("query.stream.cancel", streams.handleCancel)
