@@ -77,7 +77,8 @@ type QueryEditorInboundMessage =
     }
   | { type: "query.stream.error"; payload: { requestId: string; message: string } }
   | { type: "query.log.append"; payload: QueryLogEntry }
-  | { type: "schema.list.result"; payload: SchemaNode[] };
+  | { type: "schema.list.result"; payload: SchemaNode[] }
+  | { type: "schema.list.error"; error: string };
 
 interface QueryEditorProps {
   vscodeApi?: VscodeBridge;
@@ -318,6 +319,17 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ vscodeApi = defaultBri
           break;
         case "schema.list.result":
           setSchema(message.payload);
+          setStatus(
+            message.payload.length
+              ? t("schema.title")
+              : t("schema.empty")
+          );
+          setStatusTone("info");
+          break;
+        case "schema.list.error":
+          setSchema([]);
+          setStatus(message.error);
+          setStatusTone("error");
           break;
         default:
           break;
@@ -379,6 +391,18 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ vscodeApi = defaultBri
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [handleRun, handleCancel, isExecuting]);
+
+  useEffect(() => {
+    const connectionId = selectedConnectionId ?? undefined;
+    vscodeApi.postMessage({
+      type: "schema.list",
+      payload: { connectionId }
+    });
+  }, [selectedConnectionId, vscodeApi]);
+
+  useEffect(() => {
+    vscodeApi.postMessage({ type: "schema.list" });
+  }, [vscodeApi]);
 
   const columns: GridColumn[] = useMemo(() => {
     if (!result?.columns) {
