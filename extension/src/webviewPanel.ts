@@ -8,6 +8,7 @@ import { SchemaService } from "./services/schemaService";
 import { createSchemaMessageRouter } from "./webview/schemaMessageRouter";
 import { LogService } from "./services/logService";
 import { createLogMessageRouter } from "./webview/logMessageRouter";
+import { createSystemMessageRouter } from "./webview/systemMessageRouter";
 import { randomBytes } from "crypto";
 
 export class ResultsPanel implements vscode.Disposable {
@@ -77,6 +78,7 @@ export class ResultsPanel implements vscode.Disposable {
       this.disposables
     );
     createSchemaMessageRouter(this.panel.webview, this.schemaService, this.disposables);
+    createSystemMessageRouter(this.panel.webview, this.disposables);
     createLogMessageRouter(this.panel.webview, this.logService, this.disposables);
   }
 

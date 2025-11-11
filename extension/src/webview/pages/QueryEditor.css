@@ -311,6 +311,19 @@
   font-size: 0.8rem;
 }
 
+.fg-results__grid-editor {
+  height: 100%;
+  width: 100%;
+  border: 1px solid var(--fg-border-color);
+  border-radius: var(--fg-border-radius);
+  background: var(--fg-background);
+}
+
+.fg-results__grid-editor:focus-within {
+  border-color: var(--vscode-focusBorder);
+  box-shadow: 0 0 0 1px var(--vscode-focusBorder);
+}
+
 .fg-log-entry[data-level="error"] {
   border-left: 3px solid var(--vscode-inputValidation-errorBorder);
 }

@@ -13,7 +13,9 @@ import {
 import {
   DataEditor,
   GridCellKind,
+  GridColumnIcon,
   type GridColumn,
+  type GridSelection,
   type Item,
   type Theme
 } from "@glideapps/glide-data-grid";
@@ -29,8 +31,35 @@ import {
   mockSchema,
   mockDdl
 } from "../mock/queryEditorMocks";
+import {
+  buildClipboardText,
+  estimateColumnWidth,
+  formatCellValue,
+  type GridSelectionRange
+} from "../utils/resultGrid";
 
 const makeTableId = (schema: string, table: string) => `${schema}.${table}`;
+
+const NUMERIC_TYPE_PATTERN = /int|numeric|decimal|double|float|real|money/i;
+const BOOLEAN_TYPE_PATTERN = /bool/i;
+const DATETIME_TYPE_PATTERN = /timestamp|date|time/i;
+
+function pickColumnIcon(dataType: string): GridColumnIcon {
+  if (NUMERIC_TYPE_PATTERN.test(dataType)) {
+    return GridColumnIcon.HeaderNumber;
+  }
+  if (BOOLEAN_TYPE_PATTERN.test(dataType)) {
+    return GridColumnIcon.HeaderBoolean;
+  }
+  if (DATETIME_TYPE_PATTERN.test(dataType)) {
+    return GridColumnIcon.HeaderCode;
+  }
+  return GridColumnIcon.HeaderString;
+}
+
+function isRightAligned(dataType: string): boolean {
+  return NUMERIC_TYPE_PATTERN.test(dataType);
+}
 
 type ConnectionSummary = {
   id: string;
@@ -107,7 +136,8 @@ type QueryEditorInboundMessage =
       type: "schema.ddl.result";
       payload: { schema: string; name: string; ddl: string };
     }
-  | { type: "schema.ddl.error"; error: string };
+  | { type: "schema.ddl.error"; error: string }
+  | { type: "clipboard.write.result"; payload: { ok: boolean; message?: string } };
 
 interface QueryEditorProps {
   vscodeApi?: VscodeBridge;
@@ -153,6 +183,9 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ vscodeApi = defaultBri
   const [timeoutSeconds, setTimeoutSeconds] = useState<number>(30);
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
   const [result, setResult] = useState<QueryExecutionResult | null>(null);
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
+  const [gridSelection, setGridSelection] = useState<GridSelection | undefined>();
+  const [isGridFocused, setIsGridFocused] = useState(false);
   const [logs, setLogs] = useState<DeveloperLogEntry[]>([]);
   const [status, setStatus] = useState<string>("");
   const [statusTone, setStatusTone] = useState<"info" | "error">("info");
@@ -236,6 +269,7 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ vscodeApi = defaultBri
           setDialogTestMessage(message.payload.message);
           break;
         case "query.execution.started":
+          setGridSelection(undefined);
           setIsExecuting(true);
           setErrorMessage(null);
           setStatus(t("status.queryRunning"));
@@ -251,11 +285,13 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ vscodeApi = defaultBri
           setErrorMessage(message.error);
           setStatus(t("status.queryFailed"));
           setStatusTone("error");
+          setGridSelection(undefined);
           break;
         case "query.execution.cancelled":
           setIsExecuting(false);
           setStatus(t("status.queryCancelled"));
           setStatusTone("info");
+          setGridSelection(undefined);
           break;
         case "query.stream.started":
           setActiveRequestId(message.payload.requestId);
@@ -364,6 +400,15 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ vscodeApi = defaultBri
           setDdlLoading(false);
           setDdlError(message.error);
           break;
+        case "clipboard.write.result":
+          if (message.payload.ok) {
+            setStatus(t("results.copySuccess"));
+            setStatusTone("info");
+          } else {
+            setStatus(message.payload.message ?? t("results.copyFailed"));
+            setStatusTone("error");
+          }
+          break;
         default:
           break;
       }
@@ -403,6 +448,47 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ vscodeApi = defaultBri
       setStatus("Loaded mock data.");
     }
   }, []);
+
+  useEffect(() => {
+    if (!result?.columns) {
+      setColumnWidths({});
+      return;
+    }
+
+    const sampleRows = result.rows ?? [];
+    setColumnWidths((prev) => {
+      const next: Record<string, number> = {};
+      let changed = false;
+
+      result.columns.forEach((column, index) => {
+        if (typeof prev[column.name] === "number") {
+          next[column.name] = prev[column.name];
+        } else {
+          next[column.name] = estimateColumnWidth({
+            column,
+            rows: sampleRows,
+            columnIndex: index
+          });
+          changed = true;
+        }
+      });
+
+      if (Object.keys(prev).length !== Object.keys(next).length) {
+        changed = true;
+      }
+
+      if (!changed) {
+        for (const key of Object.keys(next)) {
+          if (prev[key] !== next[key]) {
+            changed = true;
+            break;
+          }
+        }
+      }
+
+      return changed ? next : prev;
+    });
+  }, [result]);
 
   const handleRun = useCallback(() => {
     if (!sql.trim()) {
@@ -486,34 +572,133 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ vscodeApi = defaultBri
     if (!result?.columns) {
       return [];
     }
-    return result.columns.map((column) => ({
-      id: column.name,
-      title: column.name,
-      grow: 1
-    }));
-  }, [result]);
+    const sampleRows = result.rows ?? [];
+    return result.columns.map((column, index) => {
+      const width = columnWidths[column.name] ??
+        estimateColumnWidth({ column, rows: sampleRows, columnIndex: index });
+      return {
+        id: column.name,
+        title: column.name,
+        width,
+        grow: 1,
+        icon: pickColumnIcon(column.dataType),
+        hasMenu: true
+      };
+    });
+  }, [result, columnWidths]);
+
+  const columnDataTypes = useMemo(() => result?.columns?.map((column) => column.dataType) ?? [], [result]);
 
   const getCellContent = useCallback(
     (cell: Item) => {
       const [columnIndex, rowIndex] = cell;
       const value = result?.rows?.[rowIndex]?.[columnIndex];
-      const display =
-        value === null || value === undefined
-          ? "NULL"
-          : typeof value === "string"
-            ? value
-            : JSON.stringify(value);
+      const text = formatCellValue(value);
+      const dataType = columnDataTypes[columnIndex] ?? "";
       return {
         kind: GridCellKind.Text,
-        displayData: display,
-        data: display,
-        allowOverlay: true
+        displayData: text,
+        data: text,
+        allowOverlay: text.length > 64,
+        copyData: text,
+        contentAlign: isRightAligned(dataType) ? "right" : "left"
       };
     },
-    [result]
+    [result, columnDataTypes]
   );
 
   const rowCount = result?.rows?.length ?? 0;
+
+  const selectionToRanges = useCallback(
+    (selection: GridSelection | undefined): GridSelectionRange[] => {
+      if (!selection) {
+        return [];
+      }
+      const totalColumns = result?.columns?.length ?? 0;
+      const totalRows = rowCount;
+      const ranges: GridSelectionRange[] = [];
+      const seen = new Set<string>();
+
+      const pushRange = (rect?: { x: number; y: number; width: number; height: number }) => {
+        if (!rect) {
+          return;
+        }
+        if (rect.width <= 0 || rect.height <= 0) {
+          return;
+        }
+        const key = `${rect.x}:${rect.y}:${rect.width}:${rect.height}`;
+        if (seen.has(key)) {
+          return;
+        }
+        seen.add(key);
+        ranges.push({
+          x: rect.x,
+          y: rect.y,
+          width: rect.width,
+          height: rect.height
+        });
+      };
+
+      if (selection.current) {
+        pushRange(selection.current.range);
+        const stack = selection.current.rangeStack ?? [];
+        for (const rect of stack) {
+          pushRange(rect);
+        }
+      }
+
+      const toGroups = (indices: number[]): Array<{ start: number; end: number }> => {
+        if (indices.length === 0) {
+          return [];
+        }
+        const sorted = [...indices].sort((a, b) => a - b);
+        const groups: Array<{ start: number; end: number }> = [];
+        let start = sorted[0];
+        let end = sorted[0];
+        for (let i = 1; i < sorted.length; i += 1) {
+          const value = sorted[i];
+          if (value === end + 1) {
+            end = value;
+          } else {
+            groups.push({ start, end });
+            start = value;
+            end = value;
+          }
+        }
+        groups.push({ start, end });
+        return groups;
+      };
+
+      if (selection.rows && totalColumns > 0) {
+        const rowIndices = Array.from(selection.rows);
+        const groups = toGroups(rowIndices);
+        for (const group of groups) {
+          pushRange({
+            x: 0,
+            y: group.start,
+            width: totalColumns,
+            height: group.end - group.start + 1
+          });
+        }
+      }
+
+      if (selection.columns && totalRows > 0) {
+        const columnIndices = Array.from(selection.columns);
+        const groups = toGroups(columnIndices);
+        for (const group of groups) {
+          pushRange({
+            x: group.start,
+            y: 0,
+            width: group.end - group.start + 1,
+            height: totalRows
+          });
+        }
+      }
+
+      return ranges;
+    },
+    [result, rowCount]
+  );
 
   const filteredLogs = useMemo(() => {
     const keyword = logFilter.trim().toLowerCase();
@@ -752,6 +937,83 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ vscodeApi = defaultBri
     });
   };
 
+  const copySelectionToClipboard = useCallback(async () => {
+    if (!result?.columns || !result.rows || result.columns.length === 0) {
+      setStatus(t("results.noData"));
+      setStatusTone("error");
+      return;
+    }
+    if (!gridSelection) {
+      setStatus(t("results.noSelection"));
+      setStatusTone("error");
+      return;
+    }
+    const ranges = selectionToRanges(gridSelection);
+    if (ranges.length === 0) {
+      setStatus(t("results.noSelection"));
+      setStatusTone("error");
+      return;
+    }
+
+    const totalColumns = result.columns.length;
+    const includeHeaders = totalColumns > 0 &&
+      (ranges.some((range) => range.width >= totalColumns) ||
+        (gridSelection.columns?.length ?? 0) > 0);
+
+    const text = buildClipboardText({
+      columns: result.columns,
+      rows: result.rows,
+      selections: ranges,
+      includeHeaders
+    });
+
+    if (!text) {
+      setStatus(t("results.noSelection"));
+      setStatusTone("error");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(text);
+      setStatus(t("results.copySuccess"));
+      setStatusTone("info");
+    } catch {
+      setStatus(t("results.copyInProgress"));
+      setStatusTone("info");
+      vscodeApi.postMessage({
+        type: "clipboard.write",
+        payload: { text }
+      } as { type: string; payload: { text: string } });
+    }
+  }, [gridSelection, result, selectionToRanges, t, vscodeApi]);
+
+  const handleColumnResize = useCallback((column: GridColumn, newSize: number) => {
+    const key = column.id ?? column.title;
+    if (!key) {
+      return;
+    }
+    setColumnWidths((prev) => {
+      if (prev[key] === newSize) {
+        return prev;
+      }
+      return { ...prev, [key]: newSize };
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!isGridFocused) {
+      return;
+    }
+    const handler = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "c") {
+        event.preventDefault();
+        void copySelectionToClipboard();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [isGridFocused, copySelectionToClipboard]);
+
   return (
     <main className="fg-app" aria-label="FluxGrid query workspace">
       <div className="fg-toolbar" role="toolbar" aria-label="Query toolbar">
@@ -934,6 +1196,7 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ vscodeApi = defaultBri
             <div className="fg-results__grid">
               {result && columns.length > 0 ? (
                 <DataEditor
+                  className="fg-results__grid-editor"
                   getCellContent={getCellContent}
                   columns={columns}
                   rows={rowCount}
@@ -941,6 +1204,15 @@ export const QueryEditor: React.FC<QueryEditorProps> = ({ vscodeApi = defaultBri
                   smoothScrollX
                   smoothScrollY
                   freezeColumns={1}
+                  rowMarkers="both"
+                  rowMarkerStartIndex={1}
+                  rangeSelect="multi-rect"
+                  columnSelect="multi"
+                  rowSelect="multi"
+                  onGridSelectionChange={setGridSelection}
+                  onCanvasFocused={() => setIsGridFocused(true)}
+                  onCanvasBlur={() => setIsGridFocused(false)}
+                  onColumnResize={handleColumnResize}
                   theme={gridTheme}
                 />
               ) : (
