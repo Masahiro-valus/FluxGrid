@@ -25,7 +25,9 @@ func TestConnectTestHandler_Success(t *testing.T) {
 			ConnectionInfo: map[string]string{"application_name": "fluxgrid"},
 		},
 	}
-	handler := connectTestHandler(tester)
+	handler := connectTestHandler(map[string]connectionTester{
+		"postgres": tester,
+	})
 
 	rawParams, err := json.Marshal(connectTestParams{
 		Driver: "postgres",
@@ -62,7 +64,9 @@ func TestConnectTestHandler_Success(t *testing.T) {
 
 func TestConnectTestHandler_UnsupportedDriver(t *testing.T) {
 	tester := &stubConnectionTester{}
-	handler := connectTestHandler(tester)
+	handler := connectTestHandler(map[string]connectionTester{
+		"postgres": tester,
+	})
 
 	rawParams, err := json.Marshal(connectTestParams{
 		Driver: "oracle",
@@ -83,7 +87,9 @@ func TestConnectTestHandler_UnsupportedDriver(t *testing.T) {
 
 func TestConnectTestHandler_InvalidPayload(t *testing.T) {
 	tester := &stubConnectionTester{}
-	handler := connectTestHandler(tester)
+	handler := connectTestHandler(map[string]connectionTester{
+		"postgres": tester,
+	})
 
 	_, rpcErr := handler(context.Background(), json.RawMessage(`{"driver":123}`))
 	if rpcErr == nil {
@@ -93,4 +99,3 @@ func TestConnectTestHandler_InvalidPayload(t *testing.T) {
 		t.Fatalf("unexpected rpc error code %d", rpcErr.Code)
 	}
 }
-

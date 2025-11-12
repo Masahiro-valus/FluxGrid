@@ -114,7 +114,7 @@ func Register(server *rpc.Server) {
 
 	server.Register("core.ping", pingHandler)
 	server.Register("query.execute", executeHandler(server, streams))
-	server.Register("connect.test", connectTestHandler(defaultConnectionTester))
+	server.Register("connect.test", connectTestHandler(defaultConnectionTesters()))
 	server.Register("schema.list", schemaListHandler(defaultSchemaService, pgxConnectionFactory))
 	server.Register("ddl.get", ddlGetHandler(defaultSchemaService, pgxConnectionFactory))
 	server.RegisterNotification("query.cancel", cancelHandler(server))
@@ -137,8 +137,8 @@ type executeParams struct {
 	} `json:"connection"`
 	SQL     string `json:"sql"`
 	Options struct {
-		TimeoutSeconds int `json:"timeoutSeconds"`
-		MaxRows        int `json:"maxRows"`
+		TimeoutSeconds int    `json:"timeoutSeconds"`
+		MaxRows        int    `json:"maxRows"`
 		Mode           string `json:"mode"`
 		Stream         struct {
 			HighWaterMark int `json:"highWaterMark"`
@@ -159,8 +159,8 @@ type column struct {
 }
 
 type connectTestParams struct {
-	Driver string `json:"driver"`
-	DSN    string `json:"dsn"`
+	Driver  string             `json:"driver"`
+	DSN     string             `json:"dsn"`
 	Options connectTestOptions `json:"options"`
 }
 
@@ -216,7 +216,13 @@ func (postgresConnectionTester) TestConnection(ctx context.Context, params conne
 	}, nil
 }
 
-var defaultConnectionTester connectionTester = postgresConnectionTester{}
+func defaultConnectionTesters() map[string]connectionTester {
+	return map[string]connectionTester{
+		"postgres": postgresConnectionTester{},
+		"mysql":    newMySQLConnectionTester(),
+		"sqlite":   newSQLiteConnectionTester(),
+	}
+}
 
 func executeHandler(server *rpc.Server, streams *streamManager) rpc.HandlerFunc {
 	return func(ctx context.Context, params json.RawMessage) (any, *rpc.Error) {
@@ -266,7 +272,7 @@ func executeHandler(server *rpc.Server, streams *streamManager) rpc.HandlerFunc 
 		}
 
 		switch payload.Connection.Driver {
-		case "postgres":
+		case "postgres", "mysql", "sqlite":
 		default:
 			return nil, &rpc.Error{
 				Code:    -32601,
@@ -275,6 +281,12 @@ func executeHandler(server *rpc.Server, streams *streamManager) rpc.HandlerFunc 
 		}
 
 		if payload.Options.Mode == "stream" {
+			if payload.Connection.Driver != "postgres" {
+				return nil, &rpc.Error{
+					Code:    -32601,
+					Message: fmt.Sprintf("streaming mode is not supported for driver: %s", payload.Connection.Driver),
+				}
+			}
 			requestID, ok := rpc.RequestIDFromContext(ctx)
 			if !ok || requestID == "" {
 				return nil, &rpc.Error{
@@ -285,11 +297,23 @@ func executeHandler(server *rpc.Server, streams *streamManager) rpc.HandlerFunc 
 			return executeStream(ctx, server, streams, requestID, payload)
 		}
 
-		return executeClassic(ctx, payload)
+		switch payload.Connection.Driver {
+		case "postgres":
+			return executeClassicPostgres(ctx, payload)
+		case "mysql":
+			return executeClassicSQL(ctx, payload, "mysql", defaultSQLOpener("mysql"))
+		case "sqlite":
+			return executeClassicSQL(ctx, payload, "sqlite", defaultSQLOpener("sqlite"))
+		default:
+			return nil, &rpc.Error{
+				Code:    -32601,
+				Message: fmt.Sprintf("driver not supported: %s", payload.Connection.Driver),
+			}
+		}
 	}
 }
 
-func executeClassic(ctx context.Context, payload executeParams) (any, *rpc.Error) {
+func executeClassicPostgres(ctx context.Context, payload executeParams) (any, *rpc.Error) {
 	timeoutCtx, cancel := context.WithTimeout(ctx, time.Duration(payload.Options.TimeoutSeconds)*time.Second)
 	defer cancel()
 
@@ -611,7 +635,7 @@ func cancelHandler(server *rpc.Server) rpc.NotificationFunc {
 	}
 }
 
-func connectTestHandler(tester connectionTester) rpc.HandlerFunc {
+func connectTestHandler(testers map[string]connectionTester) rpc.HandlerFunc {
 	return func(ctx context.Context, raw json.RawMessage) (any, *rpc.Error) {
 		var payload connectTestParams
 		if len(raw) == 0 {
@@ -640,10 +664,8 @@ func connectTestHandler(tester connectionTester) rpc.HandlerFunc {
 			}
 		}
 
-		switch payload.Driver {
-		case "postgres":
-			// supported
-		default:
+		tester, ok := testers[payload.Driver]
+		if !ok {
 			return nil, &rpc.Error{
 				Code:    -32601,
 				Message: fmt.Sprintf("driver not supported: %s", payload.Driver),
@@ -685,4 +707,3 @@ func ensureJSONCompatible(value interface{}) error {
 	_, err := json.Marshal(value)
 	return err
 }
-

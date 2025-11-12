@@ -15,7 +15,7 @@ func TestConnectTestHandler_Postgres_Success(t *testing.T) {
 		t.Skip("FLUXGRID_PG_DSN not set, skipping integration test")
 	}
 
-	handler := connectTestHandler(defaultConnectionTester)
+	handler := connectTestHandler(defaultConnectionTesters())
 
 	payload := connectTestParams{
 		Driver: "postgres",
@@ -67,7 +67,7 @@ func TestConnectTestHandler_Postgres_InvalidPassword(t *testing.T) {
 	// craft obviously invalid password to trigger auth failure
 	u.User = url.UserPassword(user, "invalid-password")
 
-	handler := connectTestHandler(defaultConnectionTester)
+	handler := connectTestHandler(defaultConnectionTesters())
 
 	payload := connectTestParams{
 		Driver: "postgres",

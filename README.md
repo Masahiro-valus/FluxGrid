@@ -98,7 +98,8 @@ mysql://fluxgrid:fluxgrid@tcp(localhost:53306)/fluxgrid
 
 - `FluxGrid: Open Result Panel` コマンドで接続管理 UI を開くと、接続の追加/編集/削除が可能です
 - Webview 側で送信した操作は `connection.*` JSON-RPC メッセージとして拡張・Core に連携されます
-- 新規接続の検証は `connect.test` エンドポイント（PostgreSQL 対応済み）を経由してバックエンドで実施されます
+- 新規接続の検証は `connect.test` エンドポイント（PostgreSQL / MySQL / SQLite 対応）を経由してバックエンドで実施されます
+- クエリのストリーミング配信は現状 PostgreSQL ドライバーのみ対応しています（MySQL / SQLite はバッチ実行）
 
 ## テスト
 
